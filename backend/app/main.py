@@ -1,17 +1,20 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.router import router
+from app.core.config import settings
+
 
 app = FastAPI(
-    title="Billing Software API",
-    version="1.0.0",
+    title=settings.app_name,
+    version=settings.app_version,
 )
 
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:5173",
+        settings.frontend_url,
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -19,9 +22,4 @@ app.add_middleware(
 )
 
 
-@app.get("/health")
-async def health_check():
-    return {
-        "status": "ok",
-        "service": "billing-api",
-    }
+app.include_router(router)
