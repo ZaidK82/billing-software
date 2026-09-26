@@ -32,7 +32,8 @@ async def database_health_check():
             "status": "ok",
         }
 
-    except Exception:
+    except Exception as exc:
         return {
             "status": "error",
+            "detail": str(exc),
         }

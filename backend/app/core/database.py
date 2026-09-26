@@ -13,11 +13,13 @@ class Base(DeclarativeBase):
 engine = None
 SessionLocal = None
 
-
 if settings.database_url:
     engine = create_engine(
         settings.database_url,
         pool_pre_ping=True,
+        connect_args={
+            "sslmode": "require",
+        },
     )
 
     SessionLocal = sessionmaker(
