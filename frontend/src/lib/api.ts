@@ -28,3 +28,23 @@ export async function getCurrentUser(accessToken: string) {
 
   return response.json();
 }
+
+export async function createBusiness(accessToken: string) {
+  const response = await fetch(`${API_URL}/business`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+
+    throw new Error(
+      body?.detail ||
+        `Business request failed: ${response.status}`,
+    );
+  }
+
+  return response.json();
+}

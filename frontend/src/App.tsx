@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 
 import {
+  createBusiness,
   getCurrentUser,
   getHealth,
 } from "./lib/api";
@@ -21,6 +22,10 @@ type ApiHealth = {
 
 type CurrentUser = {
   user_id: string;
+  business_id: string;
+  business_name: string;
+  role: string;
+  business_created: boolean;
 };
 
 function App() {
@@ -56,7 +61,17 @@ function App() {
             session.access_token,
           );
 
-          setCurrentUser(user);
+          const business = await createBusiness(
+            session.access_token,
+          );
+
+          setCurrentUser({
+            ...user,
+            business_id: business.business_id,
+            business_name: business.business_name,
+            role: business.role,
+            business_created: business.created,
+          });
         }
       } catch (err) {
         setError(
@@ -83,7 +98,17 @@ function App() {
             session.access_token,
           );
 
-          setCurrentUser(user);
+          const business = await createBusiness(
+            session.access_token,
+          );
+
+          setCurrentUser({
+            ...user,
+            business_id: business.business_id,
+            business_name: business.business_name,
+            role: business.role,
+            business_created: business.created,
+          });
         } catch (err) {
           setError(
             err instanceof Error
@@ -115,7 +140,18 @@ function App() {
             data.session.access_token,
           );
 
-          setCurrentUser(user);
+          const business = await createBusiness(
+            data.session.access_token,
+          );
+
+          setCurrentUser({
+            ...user,
+            business_id: business.business_id,
+            business_name: business.business_name,
+            role: business.role,
+            business_created: business.created,
+          });
+
           setMessage("Registration successful.");
         } else {
           setMessage(
@@ -135,7 +171,18 @@ function App() {
           data.session.access_token,
         );
 
-        setCurrentUser(user);
+        const business = await createBusiness(
+          data.session.access_token,
+        );
+
+        setCurrentUser({
+          ...user,
+          business_id: business.business_id,
+          business_name: business.business_name,
+          role: business.role,
+          business_created: business.created,
+        });
+
         setMessage("Login successful.");
       }
     } catch (err) {
@@ -201,9 +248,23 @@ function App() {
                   Authenticated
                 </p>
 
-                <p className="mt-2 break-all text-xs text-green-700">
+                <div className="mt-3 space-y-1 text-xs text-green-700">
+                <p className="break-all">
                   User ID: {currentUser.user_id}
                 </p>
+
+                <p>
+                  Business: {currentUser.business_name}
+                </p>
+
+                <p>
+                  Role: {currentUser.role}
+                </p>
+
+                <p className="break-all">
+                  Business ID: {currentUser.business_id}
+                </p>
+              </div>
               </div>
 
               <button
