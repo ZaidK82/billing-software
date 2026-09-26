@@ -1,5 +1,6 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from app.api.dependencies import get_current_user_id
 from app.core.config import settings
 from app.core.database import engine
 
@@ -32,8 +33,16 @@ async def database_health_check():
             "status": "ok",
         }
 
-    except Exception as exc:
+    except Exception:
         return {
             "status": "error",
-            "detail": str(exc),
         }
+
+
+@router.get("/auth/me")
+async def get_me(
+    user_id=Depends(get_current_user_id),
+):
+    return {
+        "user_id": str(user_id),
+    }

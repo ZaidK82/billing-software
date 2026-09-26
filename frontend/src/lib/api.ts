@@ -10,3 +10,21 @@ export async function getHealth() {
 
   return response.json();
 }
+
+export async function getCurrentUser(accessToken: string) {
+  const response = await fetch(`${API_URL}/auth/me`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+
+    throw new Error(
+      body?.detail || `Authentication request failed: ${response.status}`,
+    );
+  }
+
+  return response.json();
+}
