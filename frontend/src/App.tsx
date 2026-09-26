@@ -1,10 +1,30 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import { useEffect, useState } from "react";
+
+import { getHealth } from "./lib/api";
+
+type ApiHealth = {
+  status: string;
+  service: string;
+  version: string;
+};
 
 function App() {
+  const [health, setHealth] = useState<ApiHealth | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function checkApi() {
+      try {
+        const data = await getHealth();
+        setHealth(data);
+      } catch {
+        setError("Unable to connect to the backend API.");
+      }
+    }
+
+    checkApi();
+  }, []);
+
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-8">
       <div className="mx-auto flex min-h-[80vh] max-w-md items-center justify-center">
@@ -19,19 +39,40 @@ function App() {
             </h1>
 
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              React frontend is running successfully.
+              React frontend is connected to the FastAPI backend.
             </p>
           </div>
 
           <div className="rounded-xl bg-slate-100 p-4">
             <p className="text-sm font-medium text-slate-800">
-              Version 1
+              Backend Status
             </p>
 
-            <p className="mt-1 text-sm text-slate-600">
-              Invoice creation, preview and PDF generation will be added
-              incrementally.
-            </p>
+            {health && (
+              <div className="mt-3 space-y-1 text-sm text-slate-600">
+                <p>
+                  Status:{" "}
+                  <span className="font-medium text-green-600">
+                    {health.status}
+                  </span>
+                </p>
+
+                <p>Service: {health.service}</p>
+                <p>Version: {health.version}</p>
+              </div>
+            )}
+
+            {error && (
+              <p className="mt-3 text-sm font-medium text-red-600">
+                {error}
+              </p>
+            )}
+
+            {!health && !error && (
+              <p className="mt-3 text-sm text-slate-500">
+                Connecting to backend...
+              </p>
+            )}
           </div>
         </section>
       </div>
