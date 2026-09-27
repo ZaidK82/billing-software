@@ -5,6 +5,7 @@ import {
 } from "react";
 
 import BillEditor from "./components/billing/BillEditor";
+import BillPreview from "./components/billing/BillPreview";
 
 import {
   createBusiness,
@@ -12,7 +13,7 @@ import {
   getCurrentUser,
   getHealth,
   updateBusinessProfile,
-  type BusinessProfile,
+  type SavedBill,
 } from "./lib/api";
 
 import {
@@ -69,8 +70,11 @@ function App() {
     useState(false);
 
   const [screen, setScreen] = useState<
-    "profile" | "bill"
+    "profile" | "bill" | "preview"
   >("profile");
+
+  const [savedBill, setSavedBill] =
+    useState<SavedBill | null>(null);
 
   useEffect(() => {
     async function initialize() {
@@ -359,15 +363,39 @@ function App() {
   }
 
   if (currentUser && business) {
+    if (
+      screen === "preview" &&
+      savedBill
+    ) {
+      return (
+        <BillPreview
+          bill={savedBill}
+          businessName={business.name}
+          businessPhone={business.phone}
+          businessEmail={business.email}
+          businessAddress={business.address}
+          businessCity={business.city}
+          businessState={business.state}
+          businessPincode={business.pincode}
+          onCreateNew={() => {
+            setSavedBill(null);
+            setScreen("bill");
+          }}
+          onBack={() => {
+            setSavedBill(null);
+            setScreen("profile");
+          }}
+        />
+      );
+    }
     if (screen === "bill") {
       return (
         <BillEditor
           onCancel={() => setScreen("profile")}
-          onSaved={(invoiceNumber) => {
-            setMessage(
-              `Bill ${invoiceNumber} saved successfully.`,
-            );
-            setScreen("profile");
+          onSaved={(bill) => {
+            setSavedBill(bill);
+            setMessage(null);
+            setScreen("preview");
           }}
         />
       );

@@ -19,9 +19,11 @@ type BillItem = {
   unit_price: number;
 };
 
+import type { SavedBill } from "../../lib/api";
+
 type BillEditorProps = {
   onCancel: () => void;
-  onSaved: (invoiceNumber: string) => void;
+  onSaved: (bill: SavedBill) => void;
 };
 
 function createItem(): BillItem {
@@ -171,7 +173,7 @@ function BillEditor({
         },
         );
 
-        onSaved(savedBill.invoice_number);
+        onSaved(savedBill);
     } catch (err) {
         setError(
         err instanceof Error
