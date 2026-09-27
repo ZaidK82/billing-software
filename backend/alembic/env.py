@@ -12,7 +12,12 @@ if str(BACKEND_DIR) not in sys.path:
 
 from app.core.config import settings
 from app.core.database import Base
-from app.models import Business, BusinessMembership
+from app.models import (
+    Bill,
+    BillItem,
+    Business,
+    BusinessMembership,
+)
 
 
 config = context.config
