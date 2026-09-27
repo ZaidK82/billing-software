@@ -48,3 +48,60 @@ export async function createBusiness(accessToken: string) {
 
   return response.json();
 }
+
+export type BusinessProfile = {
+  id: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  pincode: string | null;
+};
+
+export async function getBusinessProfile(
+  accessToken: string,
+): Promise<BusinessProfile> {
+  const response = await fetch(`${API_URL}/business`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+
+    throw new Error(
+      body?.detail ||
+        `Business request failed: ${response.status}`,
+    );
+  }
+
+  return response.json();
+}
+
+export async function updateBusinessProfile(
+  accessToken: string,
+  profile: Omit<BusinessProfile, "id">,
+): Promise<BusinessProfile> {
+  const response = await fetch(`${API_URL}/business`, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(profile),
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+
+    throw new Error(
+      body?.detail ||
+        `Business update failed: ${response.status}`,
+    );
+  }
+
+  return response.json();
+}
