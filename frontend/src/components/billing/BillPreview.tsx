@@ -1,3 +1,7 @@
+import { useState } from "react";
+
+import { downloadBillPdf } from "../../lib/api";
+import { getSession } from "../../lib/auth";
 import type { SavedBill } from "../../lib/api";
 
 type BillPreviewProps = {
@@ -25,6 +29,11 @@ function BillPreview({
   onCreateNew,
   onBack,
 }: BillPreviewProps) {
+  const [isDownloading, setIsDownloading] =
+    useState(false);
+
+  const [downloadError, setDownloadError] =
+    useState<string | null>(null);
   const businessLocation = [
     businessCity,
     businessState,
@@ -32,27 +41,88 @@ function BillPreview({
   ]
     .filter(Boolean)
     .join(", ");
+ 
+   async function handleDownloadPdf() {
+    setIsDownloading(true);
+    setDownloadError(null);
+
+    try {
+      const session = await getSession();
+
+      if (!session?.access_token) {
+        throw new Error(
+          "Your session has expired. Please log in again.",
+        );
+      }
+
+      const pdfBlob = await downloadBillPdf(
+        session.access_token,
+        bill.id,
+      );
+
+      const url = window.URL.createObjectURL(
+        pdfBlob,
+      );
+
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${bill.invoice_number}.pdf`;
+
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      setDownloadError(
+        error instanceof Error
+          ? error.message
+          : "Unable to download PDF.",
+      );
+    } finally {
+      setIsDownloading(false);
+    }
+  }
 
   return (
     <main className="min-h-screen bg-slate-100 px-4 py-6">
       <div className="mx-auto max-w-2xl">
-        <div className="mb-4 flex items-center justify-between">
-          <button
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <button
             type="button"
             onClick={onBack}
-            className="text-sm font-medium text-blue-600"
-          >
+            className="text-left text-sm font-medium text-blue-600"
+        >
             ← Business Profile
-          </button>
+        </button>
 
-          <button
+        <div className="flex flex-wrap gap-2">
+            <button
+            type="button"
+            onClick={handleDownloadPdf}
+            disabled={isDownloading}
+            className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+            {isDownloading
+                ? "Preparing PDF..."
+                : "Download PDF"}
+            </button>
+
+            <button
             type="button"
             onClick={onCreateNew}
             className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white"
-          >
+            >
             New Bill
-          </button>
+            </button>
         </div>
+        </div>
+
+        {downloadError && (
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {downloadError}
+        </div>
+        )}
 
         <section className="overflow-hidden rounded-2xl bg-white shadow-sm">
           <div className="border-b border-slate-200 p-5">

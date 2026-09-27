@@ -163,3 +163,28 @@ export async function saveBill(
 
   return response.json();
 }
+
+export async function downloadBillPdf(
+  accessToken: string,
+  billId: string,
+): Promise<Blob> {
+  const response = await fetch(
+    `${API_URL}/bills/${billId}/pdf`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+
+    throw new Error(
+      body?.detail ||
+        `PDF download failed: ${response.status}`,
+    );
+  }
+
+  return response.blob();
+}

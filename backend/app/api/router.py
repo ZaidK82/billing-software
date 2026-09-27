@@ -1,7 +1,7 @@
 from decimal import Decimal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status , Response
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import get_current_user_id
 from app.core.config import settings
 from app.core.database import engine, get_db
+from app.services.invoice_pdf import build_invoice_pdf
 from app.models import (
     Bill,
     BillItem,
@@ -395,3 +396,40 @@ async def create_bill(
     db.refresh(bill)
 
     return bill
+
+@router.get("/bills/{bill_id}/pdf")
+async def get_bill_pdf(
+    bill_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    business = get_user_business(user_id, db)
+
+    bill = db.scalar(
+        select(Bill).where(
+            Bill.id == bill_id,
+            Bill.business_id == business.id,
+        )
+    )
+
+    if bill is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Bill not found.",
+        )
+
+    pdf_bytes = build_invoice_pdf(
+        bill=bill,
+        business=business,
+    )
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="'
+                f'{bill.invoice_number}.pdf"'
+            ),
+        },
+    )
