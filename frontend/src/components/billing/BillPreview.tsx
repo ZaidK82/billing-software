@@ -15,6 +15,7 @@ type BillPreviewProps = {
   businessPincode: string | null;
   onCreateNew: () => void;
   onBack: () => void;
+  onBackToBills: () => void;
 };
 
 function BillPreview({
@@ -28,6 +29,7 @@ function BillPreview({
   businessPincode,
   onCreateNew,
   onBack,
+  onBackToBills,
 }: BillPreviewProps) {
   const [isDownloading, setIsDownloading] =
     useState(false);
@@ -88,13 +90,23 @@ function BillPreview({
     <main className="min-h-screen bg-slate-100 px-4 py-6">
       <div className="mx-auto max-w-2xl">
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-wrap items-center gap-4">
         <button
             type="button"
             onClick={onBack}
-            className="text-left text-sm font-medium text-blue-600"
+            className="text-sm font-medium text-blue-600"
         >
             ← Business Profile
         </button>
+
+        <button
+            type="button"
+            onClick={onBackToBills}
+            className="text-sm font-medium text-blue-600"
+        >
+            ← Bills
+        </button>
+        </div>
 
         <div className="flex flex-wrap gap-2">
             <button

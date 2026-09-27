@@ -188,3 +188,57 @@ export async function downloadBillPdf(
 
   return response.blob();
 }
+
+export type BillListItem = {
+  id: string;
+  invoice_number: string;
+  customer_name: string | null;
+  total: string;
+  created_at: string;
+};
+
+export async function getBills(
+  accessToken: string,
+): Promise<BillListItem[]> {
+  const response = await fetch(`${API_URL}/bills`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+
+    throw new Error(
+      body?.detail ||
+        `Bills request failed: ${response.status}`,
+    );
+  }
+
+  return response.json();
+}
+
+export async function getBill(
+  accessToken: string,
+  billId: string,
+): Promise<SavedBill> {
+  const response = await fetch(
+    `${API_URL}/bills/${billId}`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+
+    throw new Error(
+      body?.detail ||
+        `Bill request failed: ${response.status}`,
+    );
+  }
+
+  return response.json();
+}

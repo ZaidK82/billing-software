@@ -79,6 +79,15 @@ class BillResponse(BaseModel):
     created_at: object
     items: list[BillItemResponse]
 
+class BillListItemResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    invoice_number: str
+    customer_name: str | None
+    total: Decimal
+    created_at: object
+
 def get_user_business(
     user_id: UUID,
     db: Session,
@@ -397,6 +406,28 @@ async def create_bill(
 
     return bill
 
+@router.get(
+    "/bills",
+    response_model=list[BillListItemResponse],
+)
+async def get_bills(
+    user_id: UUID = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    business = get_user_business(user_id, db)
+
+    bills = db.scalars(
+        select(Bill)
+        .where(
+            Bill.business_id == business.id,
+        )
+        .order_by(
+            Bill.created_at.desc(),
+        )
+    ).all()
+
+    return bills
+
 @router.get("/bills/{bill_id}/pdf")
 async def get_bill_pdf(
     bill_id: UUID,
@@ -433,3 +464,29 @@ async def get_bill_pdf(
             ),
         },
     )
+
+@router.get(
+    "/bills/{bill_id}",
+    response_model=BillResponse,
+)
+async def get_bill(
+    bill_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    business = get_user_business(user_id, db)
+
+    bill = db.scalar(
+        select(Bill).where(
+            Bill.id == bill_id,
+            Bill.business_id == business.id,
+        )
+    )
+
+    if bill is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Bill not found.",
+        )
+
+    return bill

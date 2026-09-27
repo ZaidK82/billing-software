@@ -6,6 +6,7 @@ import {
 
 import BillEditor from "./components/billing/BillEditor";
 import BillPreview from "./components/billing/BillPreview";
+import BillHistory from "./components/billing/BillHistory";
 
 import {
   createBusiness,
@@ -14,6 +15,12 @@ import {
   getHealth,
   updateBusinessProfile,
   type SavedBill,
+} from "./lib/api";
+
+import {
+  getBill,
+  getBills,
+  type BillListItem,
 } from "./lib/api";
 
 import {
@@ -70,11 +77,20 @@ function App() {
     useState(false);
 
   const [screen, setScreen] = useState<
-    "profile" | "bill" | "preview"
+    "profile" | "bill" | "history" | "preview"
   >("profile");
 
   const [savedBill, setSavedBill] =
     useState<SavedBill | null>(null);
+
+  const [bills, setBills] =
+    useState<BillListItem[]>([]);
+
+  const [isBillsLoading, setIsBillsLoading] =
+    useState(false);
+
+  const [billsError, setBillsError] =
+    useState<string | null>(null);
 
   useEffect(() => {
     async function initialize() {
@@ -301,6 +317,35 @@ function App() {
     }
   }
 
+  async function loadBills() {
+  setIsBillsLoading(true);
+  setBillsError(null);
+
+  try {
+    const session = await getSession();
+
+    if (!session?.access_token) {
+      throw new Error(
+        "Your session has expired. Please log in again.",
+      );
+    }
+
+    const savedBills = await getBills(
+      session.access_token,
+    );
+
+    setBills(savedBills);
+  } catch (error) {
+    setBillsError(
+      error instanceof Error
+        ? error.message
+        : "Unable to load bills.",
+    );
+  } finally {
+    setIsBillsLoading(false);
+  }
+}
+
   async function handleProfileSubmit(
     event: FormEvent<HTMLFormElement>,
   ) {
@@ -363,6 +408,47 @@ function App() {
   }
 
   if (currentUser && business) {
+    if (screen === "history") {
+      return (
+        <BillHistory
+          bills={bills}
+          isLoading={isBillsLoading}
+          error={billsError}
+          onViewBill={async (billId) => {
+            try {
+              const session = await getSession();
+
+              if (!session?.access_token) {
+                throw new Error(
+                  "Your session has expired. Please log in again.",
+                );
+              }
+
+              const bill = await getBill(
+                session.access_token,
+                billId,
+              );
+
+              setSavedBill(bill);
+              setBillsError(null);
+              setScreen("preview");
+            } catch (error) {
+              setBillsError(
+                error instanceof Error
+                  ? error.message
+                  : "Unable to load the bill.",
+              );
+            }
+          }}
+          onCreateBill={() => {
+            setScreen("bill");
+          }}
+          onBack={() => {
+            setScreen("profile");
+          }}
+        />
+      );
+    }
     if (
       screen === "preview" &&
       savedBill
@@ -384,6 +470,10 @@ function App() {
           onBack={() => {
             setSavedBill(null);
             setScreen("profile");
+          }}
+          onBackToBills={() => {
+            setScreen("history");
+            void loadBills();
           }}
         />
       );
@@ -417,13 +507,26 @@ function App() {
                 Enter the business details that will
                 appear on your invoices.
               </p>
+              <div className="mt-4 flex gap-3">
               <button
-              type="button"
-              onClick={() => setScreen("bill")}
-              className="mt-4 w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white"
+                type="button"
+                onClick={() => {
+                  setScreen("history");
+                  void loadBills();
+                }}
+                className="flex-1 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700"
+              >
+                Bills
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setScreen("bill")}
+                className="flex-1 rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white"
               >
                 Create Bill
               </button>
+            </div>
             </div>
 
             <form
