@@ -88,14 +88,14 @@ function BillPreview({
   }
 
   return (
-    <main className="min-h-screen bg-slate-100 px-4 py-6">
-      <div className="mx-auto max-w-2xl">
-        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-wrap items-center gap-4">
+    <main className="min-h-screen bg-slate-100 px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mx-auto w-full max-w-4xl">
+        <div className="mb-4 flex flex-col gap-3 sm:mb-6">
+          <div className="flex flex-wrap gap-x-4 gap-y-2">
             <button
               type="button"
               onClick={onBack}
-              className="text-sm font-medium text-blue-600"
+              className="min-h-10 rounded-lg px-1 text-sm font-medium text-blue-600 transition hover:bg-blue-50 active:bg-blue-100"
             >
               ← Dashboard
             </button>
@@ -103,18 +103,18 @@ function BillPreview({
             <button
               type="button"
               onClick={onBackToBills}
-              className="text-sm font-medium text-blue-600"
+              className="min-h-10 rounded-lg px-1 text-sm font-medium text-blue-600 transition hover:bg-blue-50 active:bg-blue-100"
             >
               ← Bills
             </button>
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
             <button
               type="button"
               onClick={handleDownloadPdf}
               disabled={isDownloading}
-              className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+              className="min-h-11 w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 active:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
             >
               {isDownloading
                 ? "Preparing PDF..."
@@ -124,7 +124,7 @@ function BillPreview({
             <button
               type="button"
               onClick={onCreateNew}
-              className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white"
+              className="min-h-11 w-full rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 active:bg-blue-800 sm:w-auto"
             >
               New Bill
             </button>
@@ -138,48 +138,48 @@ function BillPreview({
         )}
 
         <section className="overflow-hidden rounded-2xl bg-white shadow-sm">
-          <div className="border-b border-slate-200 p-5">
-            <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <h1 className="text-xl font-bold text-slate-900">
+          <div className="border-b border-slate-200 p-5 sm:p-6 lg:p-8">
+            <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <h1 className="break-words text-xl font-bold text-slate-900 sm:text-2xl">
                   {businessName}
                 </h1>
 
                 {businessPhone && (
-                  <p className="mt-1 text-sm text-slate-600">
+                  <p className="mt-2 break-words text-sm text-slate-600">
                     {businessPhone}
                   </p>
                 )}
 
                 {businessEmail && (
-                  <p className="text-sm text-slate-600">
+                  <p className="break-words text-sm text-slate-600">
                     {businessEmail}
                   </p>
                 )}
 
                 {businessAddress && (
-                  <p className="mt-1 whitespace-pre-line text-sm text-slate-600">
+                  <p className="mt-1 whitespace-pre-line break-words text-sm text-slate-600">
                     {businessAddress}
                   </p>
                 )}
 
                 {businessLocation && (
-                  <p className="text-sm text-slate-600">
+                  <p className="break-words text-sm text-slate-600">
                     {businessLocation}
                   </p>
                 )}
               </div>
 
-              <div className="sm:text-right">
-                <p className="text-sm font-medium uppercase tracking-wide text-slate-500">
+              <div className="shrink-0 sm:text-right">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 sm:text-sm">
                   Invoice
                 </p>
 
-                <p className="mt-1 text-xl font-bold text-slate-900">
+                <p className="mt-1 break-all text-xl font-bold text-slate-900 sm:text-2xl">
                   {bill.invoice_number}
                 </p>
 
-                <p className="mt-1 text-xs text-slate-500">
+                <p className="mt-1 text-xs text-slate-500 sm:text-sm">
                   {new Date(
                     bill.created_at,
                   ).toLocaleDateString("en-IN")}
@@ -188,23 +188,23 @@ function BillPreview({
             </div>
           </div>
 
-          <div className="border-b border-slate-200 p-5">
+          <div className="border-b border-slate-200 p-5 sm:p-6 lg:p-8">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
               Bill To
             </p>
 
-            <p className="mt-2 text-base font-semibold text-slate-900">
+            <p className="mt-2 break-words text-base font-semibold text-slate-900">
               {bill.customer_name}
             </p>
 
             {bill.customer_phone && (
-              <p className="mt-1 text-sm text-slate-600">
+              <p className="mt-1 break-words text-sm text-slate-600">
                 {bill.customer_phone}
               </p>
             )}
 
             {bill.customer_address && (
-              <p className="mt-1 whitespace-pre-line text-sm text-slate-600">
+              <p className="mt-1 whitespace-pre-line break-words text-sm text-slate-600">
                 {bill.customer_address}
               </p>
             )}
@@ -214,7 +214,7 @@ function BillPreview({
             <table className="w-full min-w-[520px] text-sm">
               <thead className="bg-slate-50">
                 <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
-                  <th className="px-5 py-3">
+                  <th className="px-5 py-3 sm:px-6">
                     Item
                   </th>
 
@@ -226,7 +226,7 @@ function BillPreview({
                     Unit Price
                   </th>
 
-                  <th className="px-5 py-3 text-right">
+                  <th className="px-5 py-3 text-right sm:px-6">
                     Total
                   </th>
                 </tr>
@@ -238,7 +238,7 @@ function BillPreview({
                     key={item.id}
                     className="border-t border-slate-100"
                   >
-                    <td className="px-5 py-4 font-medium text-slate-900">
+                    <td className="max-w-[240px] break-words px-5 py-4 font-medium text-slate-900 sm:px-6">
                       {item.item_name}
                     </td>
 
@@ -246,14 +246,14 @@ function BillPreview({
                       {item.quantity}
                     </td>
 
-                    <td className="px-3 py-4 text-right text-slate-600">
+                    <td className="whitespace-nowrap px-3 py-4 text-right text-slate-600">
                       ₹
                       {Number(
                         item.unit_price,
                       ).toFixed(2)}
                     </td>
 
-                    <td className="px-5 py-4 text-right font-medium text-slate-900">
+                    <td className="whitespace-nowrap px-5 py-4 text-right font-medium text-slate-900 sm:px-6">
                       ₹
                       {Number(
                         item.line_total,
@@ -265,12 +265,12 @@ function BillPreview({
             </table>
           </div>
 
-          <div className="border-t border-slate-200 p-5">
-            <div className="ml-auto max-w-xs space-y-2">
-              <div className="flex justify-between text-sm text-slate-600">
+          <div className="border-t border-slate-200 p-5 sm:p-6 lg:p-8">
+            <div className="ml-auto w-full max-w-xs space-y-2">
+              <div className="flex justify-between gap-6 text-sm text-slate-600">
                 <span>Subtotal</span>
 
-                <span>
+                <span className="whitespace-nowrap">
                   ₹
                   {Number(
                     bill.subtotal,
@@ -278,10 +278,10 @@ function BillPreview({
                 </span>
               </div>
 
-              <div className="flex justify-between border-t border-slate-200 pt-3 text-lg font-bold text-slate-900">
+              <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 text-lg font-bold text-slate-900">
                 <span>Total</span>
 
-                <span>
+                <span className="whitespace-nowrap">
                   ₹
                   {Number(
                     bill.total,
@@ -291,6 +291,8 @@ function BillPreview({
             </div>
           </div>
         </section>
+
+        <div className="h-4 sm:h-6" />
       </div>
     </main>
   );

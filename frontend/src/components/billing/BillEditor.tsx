@@ -262,14 +262,14 @@ function BillEditor({
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 px-4 py-6">
-      <div className="mx-auto max-w-lg">
-        <section className="rounded-2xl bg-white p-5 shadow-sm">
-          <div className="mb-6">
+    <main className="min-h-screen bg-slate-50 px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mx-auto w-full max-w-4xl">
+        <section className="rounded-2xl bg-white p-5 shadow-sm sm:p-6 lg:p-8">
+          <div className="mb-6 sm:mb-8">
             <button
               type="button"
               onClick={onCancel}
-              className="mb-4 text-sm font-medium text-blue-600"
+              className="mb-4 rounded-lg px-2 py-2 text-sm font-medium text-blue-600 transition hover:bg-blue-50 active:bg-blue-100"
             >
               ← Dashboard
             </button>
@@ -278,11 +278,11 @@ function BillEditor({
               Billing Software
             </p>
 
-            <h1 className="mt-2 text-2xl font-bold text-slate-900">
+            <h1 className="mt-2 text-2xl font-bold text-slate-900 sm:text-3xl">
               Create Bill
             </h1>
 
-            <p className="mt-2 text-sm leading-6 text-slate-600">
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 sm:text-base">
               Enter customer details and add the items
               being billed.
             </p>
@@ -290,10 +290,10 @@ function BillEditor({
 
           <form
             onSubmit={handleSubmit}
-            className="space-y-6"
+            className="space-y-8"
           >
             <section>
-              <h2 className="mb-3 text-sm font-semibold text-slate-900">
+              <h2 className="mb-4 text-base font-semibold text-slate-900">
                 Customer Details
               </h2>
 
@@ -318,7 +318,7 @@ function BillEditor({
                       isLoadingCustomers ||
                       saving
                     }
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500 disabled:cursor-not-allowed disabled:bg-slate-50"
+                    className="min-h-11 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500 disabled:cursor-not-allowed disabled:bg-slate-50"
                   >
                     <option value="">
                       {isLoadingCustomers
@@ -359,51 +359,53 @@ function BillEditor({
                     )}
                 </div>
 
-                <div>
-                  <label
-                    htmlFor="customer-name"
-                    className="mb-1 block text-sm font-medium text-slate-700"
-                  >
-                    Customer Name *
-                  </label>
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div>
+                    <label
+                      htmlFor="customer-name"
+                      className="mb-1 block text-sm font-medium text-slate-700"
+                    >
+                      Customer Name *
+                    </label>
 
-                  <input
-                    id="customer-name"
-                    type="text"
-                    required
-                    value={customerName}
-                    onChange={(event) => {
-                      setCustomerName(
-                        event.target.value,
-                      );
-                      setSelectedCustomerId("");
-                    }}
-                    className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500"
-                    placeholder="Customer name"
-                  />
-                </div>
+                    <input
+                      id="customer-name"
+                      type="text"
+                      required
+                      value={customerName}
+                      onChange={(event) => {
+                        setCustomerName(
+                          event.target.value,
+                        );
+                        setSelectedCustomerId("");
+                      }}
+                      className="min-h-11 w-full rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500"
+                      placeholder="Customer name"
+                    />
+                  </div>
 
-                <div>
-                  <label
-                    htmlFor="customer-phone"
-                    className="mb-1 block text-sm font-medium text-slate-700"
-                  >
-                    Phone
-                  </label>
+                  <div>
+                    <label
+                      htmlFor="customer-phone"
+                      className="mb-1 block text-sm font-medium text-slate-700"
+                    >
+                      Phone
+                    </label>
 
-                  <input
-                    id="customer-phone"
-                    type="tel"
-                    value={customerPhone}
-                    onChange={(event) => {
-                      setCustomerPhone(
-                        event.target.value,
-                      );
-                      setSelectedCustomerId("");
-                    }}
-                    className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500"
-                    placeholder="9876543210"
-                  />
+                    <input
+                      id="customer-phone"
+                      type="tel"
+                      value={customerPhone}
+                      onChange={(event) => {
+                        setCustomerPhone(
+                          event.target.value,
+                        );
+                        setSelectedCustomerId("");
+                      }}
+                      className="min-h-11 w-full rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500"
+                      placeholder="9876543210"
+                    />
+                  </div>
                 </div>
 
                 <div>
@@ -432,15 +434,15 @@ function BillEditor({
             </section>
 
             <section>
-              <div className="mb-3 flex items-center justify-between">
-                <h2 className="text-sm font-semibold text-slate-900">
+              <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <h2 className="text-base font-semibold text-slate-900">
                   Items
                 </h2>
 
                 <button
                   type="button"
                   onClick={addItem}
-                  className="text-sm font-semibold text-blue-600"
+                  className="self-start rounded-lg px-2 py-2 text-sm font-semibold text-blue-600 transition hover:bg-blue-50 active:bg-blue-100 sm:self-auto"
                 >
                   + Add Item
                 </button>
@@ -455,9 +457,9 @@ function BillEditor({
                   return (
                     <div
                       key={item.id}
-                      className="rounded-xl border border-slate-200 p-4"
+                      className="rounded-xl border border-slate-200 p-4 sm:p-5"
                     >
-                      <div className="mb-3 flex items-center justify-between">
+                      <div className="mb-4 flex items-center justify-between gap-3">
                         <p className="text-sm font-semibold text-slate-800">
                           Item {index + 1}
                         </p>
@@ -470,14 +472,14 @@ function BillEditor({
                                 item.id,
                               )
                             }
-                            className="text-xs font-medium text-red-600"
+                            className="rounded-lg px-2 py-2 text-xs font-medium text-red-600 transition hover:bg-red-50 active:bg-red-100"
                           >
                             Remove
                           </button>
                         )}
                       </div>
 
-                      <div className="space-y-3">
+                      <div className="space-y-4">
                         <div>
                           <label
                             htmlFor={`item-name-${item.id}`}
@@ -497,12 +499,12 @@ function BillEditor({
                                 event.target.value,
                               )
                             }
-                            className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+                            className="min-h-11 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-blue-500"
                             placeholder="Product or service"
                           />
                         </div>
 
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_auto]">
                           <div>
                             <label
                               htmlFor={`item-quantity-${item.id}`}
@@ -527,7 +529,7 @@ function BillEditor({
                                   ),
                                 )
                               }
-                              className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+                              className="min-h-11 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-blue-500"
                             />
                           </div>
 
@@ -555,20 +557,22 @@ function BillEditor({
                                   ),
                                 )
                               }
-                              className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+                              className="min-h-11 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-blue-500"
                             />
                           </div>
-                        </div>
 
-                        <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2.5">
-                          <span className="text-xs font-medium text-slate-500">
-                            Line Total
-                          </span>
+                          <div className="flex min-h-11 items-end">
+                            <div className="flex w-full items-center justify-between rounded-lg bg-slate-50 px-3 py-2.5 lg:min-w-36">
+                              <span className="text-xs font-medium text-slate-500 lg:hidden">
+                                Line Total
+                              </span>
 
-                          <span className="text-sm font-semibold text-slate-900">
-                            ₹
-                            {lineTotal.toFixed(2)}
-                          </span>
+                              <span className="text-sm font-semibold text-slate-900">
+                                ₹
+                                {lineTotal.toFixed(2)}
+                              </span>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -577,17 +581,17 @@ function BillEditor({
               </div>
             </section>
 
-            <section className="border-t border-slate-200 pt-5">
+            <section className="rounded-xl bg-slate-50 p-4 sm:p-5">
               <div className="space-y-2">
-                <div className="flex justify-between text-sm text-slate-600">
+                <div className="flex justify-between gap-4 text-sm text-slate-600">
                   <span>Subtotal</span>
 
-                  <span>
+                  <span className="font-medium">
                     ₹{subtotal.toFixed(2)}
                   </span>
                 </div>
 
-                <div className="flex justify-between text-base font-bold text-slate-900">
+                <div className="flex justify-between gap-4 border-t border-slate-200 pt-3 text-base font-bold text-slate-900 sm:text-lg">
                   <span>Total</span>
 
                   <span>
@@ -598,18 +602,22 @@ function BillEditor({
             </section>
 
             {error && (
-              <div className="rounded-xl bg-blue-50 p-3 text-sm text-blue-800">
+              <div className="rounded-xl bg-blue-50 p-3 text-sm leading-5 text-blue-800">
                 {error}
               </div>
             )}
 
-            <button
-              type="submit"
-              disabled={saving}
-              className="w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
-            >
-              {saving ? "Saving..." : "Save Bill"}
-            </button>
+            <div className="sticky bottom-0 -mx-5 border-t border-slate-200 bg-white/95 px-5 py-4 backdrop-blur sm:static sm:m-0 sm:border-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
+              <button
+                type="submit"
+                disabled={saving}
+                className="min-h-12 w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50"
+              >
+                {saving
+                  ? "Saving..."
+                  : "Save Bill"}
+              </button>
+            </div>
           </form>
         </section>
       </div>

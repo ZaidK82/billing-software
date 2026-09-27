@@ -11,6 +11,7 @@ import BillPreview from "./components/billing/BillPreview";
 import BillHistory from "./components/billing/BillHistory";
 import CustomerList from "./components/customers/CustomerList";
 import CustomerForm from "./components/customers/CustomerForm";
+import AppNavbar from "./components/navigation/AppNavbar";
 
 import {
   createBusiness,
@@ -596,31 +597,60 @@ function App() {
   }
 
   if (currentUser && business) {
+    const navigation = (
+      <AppNavbar
+        onDashboard={() => {
+          setScreen("dashboard");
+        }}
+        onCreateBill={() => {
+          setScreen("bill");
+        }}
+        onBills={() => {
+          setScreen("history");
+          void loadBills();
+        }}
+        onCustomers={() => {
+          setScreen("customers");
+          void loadCustomers();
+        }}
+        onBusinessProfile={() => {
+          setScreen("profile");
+        }}
+        onLogout={handleLogout}
+      />
+    );
     if (screen === "dashboard") {
       return (
-        <Dashboard
-          onCreateBill={() => {
-            setScreen("bill");
-          }}
-          onBills={() => {
-            setScreen("history");
-            void loadBills();
-          }}
-          onCustomers={() => {
-            setScreen("customers");
-            void loadCustomers();
-          }}
-          onBusinessProfile={() => {
-            setScreen("profile");
-          }}
-          onLogout={handleLogout}
-        />
+        <>
+          {navigation}
+
+          <Dashboard
+            onCreateBill={() => {
+              setScreen("bill");
+            }}
+            onBills={() => {
+              setScreen("history");
+              void loadBills();
+            }}
+            onCustomers={() => {
+              setScreen("customers");
+              void loadCustomers();
+            }}
+            onBusinessProfile={() => {
+              setScreen("profile");
+            }}
+            onLogout={handleLogout}
+          />
+        </>
       );
     }
 
     if (screen === "history") {
       return (
-        <BillHistory
+        <>
+          {navigation}
+
+          <BillHistory
           bills={bills}
           isLoading={isBillsLoading}
           error={billsError}
@@ -657,11 +687,14 @@ function App() {
             setScreen("dashboard");
           }}
         />
+        </>
       );
     }
 
     if (screen === "customer-form") {
       return (
+      <>
+      {navigation}
         <CustomerForm
           customer={
             editingCustomer
@@ -689,11 +722,14 @@ function App() {
             setScreen("customers");
           }}
         />
+      </>
       );
     }
 
     if (screen === "customers") {
       return (
+      <>
+      {navigation}
         <CustomerList
           customers={customers}
           isLoading={isCustomersLoading}
@@ -712,6 +748,7 @@ function App() {
             setScreen("dashboard");
           }}
         />
+      </>
       );
     }
 
@@ -720,6 +757,8 @@ function App() {
       savedBill
     ) {
       return (
+      <>
+      {navigation}
         <BillPreview
           bill={savedBill}
           businessName={business.name}
@@ -742,11 +781,14 @@ function App() {
             void loadBills();
           }}
         />
+      </>
       );
     }
 
     if (screen === "bill") {
       return (
+      <>
+      {navigation}
         <BillEditor
           onCancel={() => {
             setScreen("dashboard");
@@ -757,13 +799,16 @@ function App() {
             setScreen("preview");
           }}
         />
+      </>
       );
     }
 
     return (
-      <main className="min-h-screen bg-slate-50 px-4 py-6">
-        <div className="mx-auto max-w-lg">
-          <section className="rounded-2xl bg-white p-5 shadow-sm">
+      <>
+      {navigation}
+      <main className="min-h-screen bg-slate-50 px-4 py-6 sm:px-6 lg:px-8">
+        <div className="mx-auto w-full max-w-2xl">
+          <section className="rounded-2xl bg-white p-5 shadow-sm sm:p-6 lg:p-8">
             <div className="mb-6">
               <div className="flex items-center justify-between">
                 <button
@@ -771,7 +816,7 @@ function App() {
                   onClick={() => {
                     setScreen("dashboard");
                   }}
-                  className="text-sm font-medium text-blue-600"
+                  className="min-h-10 rounded-lg px-1 text-sm font-medium text-blue-600 transition hover:bg-blue-50 active:bg-blue-100"
                 >
                   ← Dashboard
                 </button>
@@ -790,14 +835,14 @@ function App() {
                 appear on your invoices.
               </p>
 
-              <div className="mt-4 flex gap-3">
+              <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <button
                   type="button"
                   onClick={() => {
                     setScreen("history");
                     void loadBills();
                   }}
-                  className="flex-1 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700"
+                  className="min-h-11 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 active:bg-slate-100"
                 >
                   Bills
                 </button>
@@ -807,7 +852,7 @@ function App() {
                   onClick={() => {
                     setScreen("bill");
                   }}
-                  className="flex-1 rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white"
+                  className="min-h-11 rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 active:bg-slate-950"
                 >
                   Create Bill
                 </button>
@@ -818,7 +863,7 @@ function App() {
                     setScreen("customers");
                     void loadCustomers();
                   }}
-                  className="flex-1 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700"
+                  className="min-h-11 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 active:bg-slate-100"
                 >
                   Customers
                 </button>
@@ -848,7 +893,7 @@ function App() {
                       name: event.target.value,
                     })
                   }
-                  className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500"
+                  className="w-full resize-none rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                   placeholder="My Business"
                 />
               </div>
@@ -871,7 +916,7 @@ function App() {
                       phone: event.target.value,
                     })
                   }
-                  className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500"
+                  className="w-full resize-none rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                   placeholder="9876543210"
                 />
               </div>
@@ -894,7 +939,7 @@ function App() {
                       email: event.target.value,
                     })
                   }
-                  className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500"
+                  className="w-full resize-none rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                   placeholder="business@example.com"
                 />
               </div>
@@ -941,7 +986,7 @@ function App() {
                         city: event.target.value,
                       })
                     }
-                    className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500"
+                    className="w-full resize-none rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                     placeholder="Mumbai"
                   />
                 </div>
@@ -964,7 +1009,7 @@ function App() {
                         state: event.target.value,
                       })
                     }
-                  className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500"
+                  className="w-full resize-none rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                     placeholder="Maharashtra"
                   />
                 </div>
@@ -989,7 +1034,7 @@ function App() {
                       pincode: event.target.value,
                     })
                   }
-                  className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500"
+                  className="w-full resize-none rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                   placeholder="400001"
                 />
               </div>
@@ -997,7 +1042,7 @@ function App() {
               <button
                 type="submit"
                 disabled={savingProfile}
-                className="w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
+                className="min-h-11 w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 active:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {savingProfile
                   ? "Saving..."
@@ -1026,7 +1071,7 @@ function App() {
                 type="button"
                 onClick={handleLogout}
                 disabled={loading}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700 disabled:opacity-50"
+                className="min-h-11 w-full rounded-xl border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 active:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {loading
                   ? "Logging out..."
@@ -1036,6 +1081,7 @@ function App() {
           </section>
         </div>
       </main>
+      </>
     );
   }
 
@@ -1043,7 +1089,7 @@ function App() {
     <main className="min-h-screen bg-slate-50 px-4 py-8">
       <div className="mx-auto flex min-h-[90vh] max-w-md items-center justify-center">
         <section className="w-full rounded-2xl bg-white p-6 shadow-sm">
-          <div className="mb-6">
+          <div className="mb-6 sm:mb-8">
             <p className="text-sm font-medium text-blue-600">
               Billing Software
             </p>
@@ -1082,7 +1128,7 @@ function App() {
                 onChange={(event) =>
                   setEmail(event.target.value)
                 }
-                className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500"
+                className="w-full resize-none rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 placeholder="you@example.com"
               />
             </div>
@@ -1109,7 +1155,7 @@ function App() {
                 onChange={(event) =>
                   setPassword(event.target.value)
                 }
-                className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500"
+                className="w-full resize-none rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 placeholder="••••••••"
               />
             </div>
@@ -1117,7 +1163,7 @@ function App() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
+              className="min-h-11 w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 active:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {loading
                 ? "Please wait..."
@@ -1170,8 +1216,7 @@ function App() {
           )}
         </section>
       </div>
-    </main>
-  );
-}
-
+      </main>
+    );
+  }
 export default App;

@@ -18,13 +18,13 @@ function BillHistory({
   onBack,
 }: BillHistoryProps) {
   return (
-    <main className="min-h-screen bg-slate-100 px-4 py-6">
-      <div className="mx-auto max-w-2xl">
-        <div className="mb-5 flex items-center justify-between gap-3">
+    <main className="min-h-screen bg-slate-100 px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mx-auto w-full max-w-4xl">
+        <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <button
             type="button"
             onClick={onBack}
-            className="text-sm font-medium text-blue-600"
+            className="min-h-10 self-start rounded-lg px-1 text-sm font-medium text-blue-600 transition hover:bg-blue-50 active:bg-blue-100"
           >
             ← Dashboard
           </button>
@@ -32,36 +32,36 @@ function BillHistory({
           <button
             type="button"
             onClick={onCreateBill}
-            className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white"
+            className="min-h-11 w-full rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 active:bg-blue-800 sm:w-auto"
           >
             New Bill
           </button>
         </div>
 
-        <div className="mb-5">
-          <h1 className="text-2xl font-bold text-slate-900">
+        <div className="mb-5 sm:mb-6">
+          <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">
             Bills
           </h1>
 
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-slate-500 sm:text-base">
             View your saved invoices.
           </p>
         </div>
 
         {isLoading && (
-          <div className="rounded-2xl bg-white p-6 text-center text-sm text-slate-500 shadow-sm">
+          <div className="rounded-2xl bg-white p-6 text-center text-sm text-slate-500 shadow-sm sm:p-8">
             Loading bills...
           </div>
         )}
 
         {error && !isLoading && (
-          <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 sm:p-5">
             {error}
           </div>
         )}
 
         {!isLoading && !error && bills.length === 0 && (
-          <div className="rounded-2xl bg-white p-6 text-center shadow-sm">
+          <div className="rounded-2xl bg-white p-6 text-center shadow-sm sm:p-8">
             <p className="font-medium text-slate-900">
               No bills yet
             </p>
@@ -73,7 +73,7 @@ function BillHistory({
             <button
               type="button"
               onClick={onCreateBill}
-              className="mt-4 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white"
+              className="mt-4 min-h-11 w-full rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 active:bg-blue-800 sm:w-auto"
             >
               Create Bill
             </button>
@@ -85,11 +85,11 @@ function BillHistory({
             {bills.map((bill) => (
               <article
                 key={bill.id}
-                className="rounded-2xl bg-white p-4 shadow-sm"
+                className="rounded-2xl bg-white p-4 shadow-sm transition hover:shadow-md sm:p-5"
               >
-                <div className="flex items-start justify-between gap-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
-                    <p className="font-semibold text-slate-900">
+                    <p className="break-all font-semibold text-slate-900 sm:text-base">
                       {bill.invoice_number}
                     </p>
 
@@ -104,11 +104,15 @@ function BillHistory({
                     </p>
                   </div>
 
-                  <p className="shrink-0 text-base font-bold text-slate-900">
-                    ₹{Number(bill.total).toLocaleString("en-IN", {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}
+                  <p className="text-lg font-bold text-slate-900 sm:shrink-0 sm:text-right">
+                    ₹
+                    {Number(bill.total).toLocaleString(
+                      "en-IN",
+                      {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      },
+                    )}
                   </p>
                 </div>
 
@@ -116,7 +120,7 @@ function BillHistory({
                   <button
                     type="button"
                     onClick={() => onViewBill(bill.id)}
-                    className="text-sm font-semibold text-blue-600"
+                    className="min-h-10 rounded-lg px-1 text-sm font-semibold text-blue-600 transition hover:bg-blue-50 active:bg-blue-100"
                   >
                     View Bill →
                   </button>
