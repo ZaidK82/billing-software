@@ -17,6 +17,7 @@ from app.models import (
     BillItem,
     Business,
     BusinessMembership,
+    Customer,
 )
 
 
