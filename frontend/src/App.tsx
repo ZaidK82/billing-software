@@ -4,6 +4,8 @@ import {
   useState,
 } from "react";
 
+import BillEditor from "./components/billing/BillEditor";
+
 import {
   createBusiness,
   getBusinessProfile,
@@ -65,6 +67,10 @@ function App() {
 
   const [savingProfile, setSavingProfile] =
     useState(false);
+
+  const [screen, setScreen] = useState<
+    "profile" | "bill"
+  >("profile");
 
   useEffect(() => {
     async function initialize() {
@@ -277,6 +283,7 @@ function App() {
 
       setCurrentUser(null);
       setBusiness(null);
+      setScreen("profile");
 
       setMessage("Logged out successfully.");
     } catch (err) {
@@ -352,6 +359,19 @@ function App() {
   }
 
   if (currentUser && business) {
+    if (screen === "bill") {
+      return (
+        <BillEditor
+          onCancel={() => setScreen("profile")}
+          onSaved={(invoiceNumber) => {
+            setMessage(
+              `Bill ${invoiceNumber} saved successfully.`,
+            );
+            setScreen("profile");
+          }}
+        />
+      );
+    }
     return (
       <main className="min-h-screen bg-slate-50 px-4 py-6">
         <div className="mx-auto max-w-lg">
@@ -369,6 +389,13 @@ function App() {
                 Enter the business details that will
                 appear on your invoices.
               </p>
+              <button
+              type="button"
+              onClick={() => setScreen("bill")}
+              className="mt-4 w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white"
+              >
+                Create Bill
+              </button>
             </div>
 
             <form

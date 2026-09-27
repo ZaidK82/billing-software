@@ -1,14 +1,20 @@
+from decimal import Decimal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user_id
 from app.core.config import settings
 from app.core.database import engine, get_db
-from app.models import Business, BusinessMembership
+from app.models import (
+    Bill,
+    BillItem,
+    Business,
+    BusinessMembership,
+)
 
 
 router = APIRouter()
@@ -36,6 +42,41 @@ class BusinessProfileUpdate(BaseModel):
     state: str | None = None
     pincode: str | None = None
 
+class BillItemCreate(BaseModel):
+    item_name: str
+    quantity: int
+    unit_price: Decimal
+
+
+class BillCreate(BaseModel):
+    customer_name: str
+    customer_phone: str | None = None
+    customer_address: str | None = None
+    items: list[BillItemCreate]
+
+
+class BillItemResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    item_name: str
+    quantity: int
+    unit_price: Decimal
+    line_total: Decimal
+
+
+class BillResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    invoice_number: str
+    customer_name: str | None
+    customer_phone: str | None
+    customer_address: str | None
+    subtotal: Decimal
+    total: Decimal
+    created_at: object
+    items: list[BillItemResponse]
 
 def get_user_business(
     user_id: UUID,
@@ -222,3 +263,135 @@ async def update_business(
     db.refresh(business)
 
     return business
+
+@router.post(
+    "/bills",
+    response_model=BillResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_bill(
+    bill_data: BillCreate,
+    user_id: UUID = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    business = get_user_business(user_id, db)
+
+    customer_name = bill_data.customer_name.strip()
+
+    if not customer_name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Customer name is required.",
+        )
+
+    if not bill_data.items:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one bill item is required.",
+        )
+
+    cleaned_items: list[dict] = []
+
+    for item in bill_data.items:
+        item_name = item.item_name.strip()
+
+        if not item_name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Every bill item must have a name.",
+            )
+
+        if item.quantity <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Item quantity must be greater than zero.",
+            )
+
+        if item.unit_price < 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Item price cannot be negative.",
+            )
+
+        line_total = (
+            Decimal(item.quantity)
+            * item.unit_price
+        ).quantize(Decimal("0.01"))
+
+        cleaned_items.append(
+            {
+                "item_name": item_name,
+                "quantity": item.quantity,
+                "unit_price": item.unit_price,
+                "line_total": line_total,
+            }
+        )
+
+    subtotal = sum(
+        (
+            item["line_total"]
+            for item in cleaned_items
+        ),
+        Decimal("0.00"),
+    ).quantize(Decimal("0.01"))
+
+    total = subtotal
+
+    latest_invoice_number = db.scalar(
+        select(func.max(Bill.invoice_number)).where(
+            Bill.business_id == business.id,
+        )
+    )
+
+    if latest_invoice_number:
+        try:
+            latest_number = int(
+                latest_invoice_number.removeprefix(
+                    "INV-"
+                )
+            )
+        except ValueError:
+            latest_number = 0
+    else:
+        latest_number = 0
+
+    invoice_number = (
+        f"INV-{latest_number + 1:04d}"
+    )
+
+    bill = Bill(
+        business_id=business.id,
+        invoice_number=invoice_number,
+        customer_name=customer_name,
+        customer_phone=(
+            bill_data.customer_phone.strip()
+            if bill_data.customer_phone
+            else None
+        ),
+        customer_address=(
+            bill_data.customer_address.strip()
+            if bill_data.customer_address
+            else None
+        ),
+        subtotal=subtotal,
+        total=total,
+    )
+
+    db.add(bill)
+    db.flush()
+
+    for item_data in cleaned_items:
+        bill_item = BillItem(
+            bill_id=bill.id,
+            item_name=item_data["item_name"],
+            quantity=item_data["quantity"],
+            unit_price=item_data["unit_price"],
+            line_total=item_data["line_total"],
+        )
+
+        db.add(bill_item)
+
+    db.commit()
+    db.refresh(bill)
+
+    return bill

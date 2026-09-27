@@ -105,3 +105,61 @@ export async function updateBusinessProfile(
 
   return response.json();
 }
+
+export type CreateBillItem = {
+  item_name: string;
+  quantity: number;
+  unit_price: number;
+};
+
+export type CreateBillRequest = {
+  customer_name: string;
+  customer_phone: string | null;
+  customer_address: string | null;
+  items: CreateBillItem[];
+};
+
+export type SavedBillItem = {
+  id: string;
+  item_name: string;
+  quantity: number;
+  unit_price: string;
+  line_total: string;
+};
+
+export type SavedBill = {
+  id: string;
+  invoice_number: string;
+  customer_name: string | null;
+  customer_phone: string | null;
+  customer_address: string | null;
+  subtotal: string;
+  total: string;
+  created_at: string;
+  items: SavedBillItem[];
+};
+
+export async function saveBill(
+  accessToken: string,
+  bill: CreateBillRequest,
+): Promise<SavedBill> {
+  const response = await fetch(`${API_URL}/bills`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(bill),
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+
+    throw new Error(
+      body?.detail ||
+        `Bill creation failed: ${response.status}`,
+    );
+  }
+
+  return response.json();
+}
