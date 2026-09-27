@@ -1,15 +1,23 @@
 import {
-  FormEvent,
+  useEffect,
   useMemo,
   useState,
 } from "react";
 
-import {
-  getSession,
-  } from "../../lib/auth";
+import type { FormEvent } from "react";
 
 import {
+  getSession,
+} from "../../lib/auth";
+
+import {
+  getCustomers,
   saveBill,
+} from "../../lib/api";
+
+import type {
+  Customer,
+  SavedBill,
 } from "../../lib/api";
 
 type BillItem = {
@@ -18,8 +26,6 @@ type BillItem = {
   quantity: number;
   unit_price: number;
 };
-
-import type { SavedBill } from "../../lib/api";
 
 type BillEditorProps = {
   onCancel: () => void;
@@ -48,6 +54,18 @@ function BillEditor({
   const [customerAddress, setCustomerAddress] =
     useState("");
 
+  const [customers, setCustomers] =
+    useState<Customer[]>([]);
+
+  const [selectedCustomerId, setSelectedCustomerId] =
+    useState("");
+
+  const [isLoadingCustomers, setIsLoadingCustomers] =
+    useState(true);
+
+  const [customerLoadError, setCustomerLoadError] =
+    useState<string | null>(null);
+
   const [items, setItems] = useState<BillItem[]>([
     createItem(),
   ]);
@@ -58,6 +76,39 @@ function BillEditor({
   const [saving, setSaving] =
     useState(false);
 
+  useEffect(() => {
+    async function loadCustomers() {
+      setIsLoadingCustomers(true);
+      setCustomerLoadError(null);
+
+      try {
+        const session = await getSession();
+
+        if (!session?.access_token) {
+          throw new Error(
+            "Your session has expired. Please log in again.",
+          );
+        }
+
+        const savedCustomers = await getCustomers(
+          session.access_token,
+        );
+
+        setCustomers(savedCustomers);
+      } catch (err) {
+        setCustomerLoadError(
+          err instanceof Error
+            ? err.message
+            : "Unable to load saved customers.",
+        );
+      } finally {
+        setIsLoadingCustomers(false);
+      }
+    }
+
+    loadCustomers();
+  }, []);
+
   const subtotal = useMemo(() => {
     return items.reduce(
       (sum, item) =>
@@ -67,6 +118,31 @@ function BillEditor({
   }, [items]);
 
   const total = subtotal;
+
+  function handleCustomerChange(
+    customerId: string,
+  ) {
+    setSelectedCustomerId(customerId);
+
+    if (!customerId) {
+      setCustomerName("");
+      setCustomerPhone("");
+      setCustomerAddress("");
+      return;
+    }
+
+    const customer = customers.find(
+      (item) => item.id === customerId,
+    );
+
+    if (!customer) {
+      return;
+    }
+
+    setCustomerName(customer.name);
+    setCustomerPhone(customer.phone ?? "");
+    setCustomerAddress(customer.address ?? "");
+  }
 
   function updateItem(
     itemId: string,
@@ -106,84 +182,84 @@ function BillEditor({
 
   async function handleSubmit(
     event: FormEvent<HTMLFormElement>,
-    ) {
+  ) {
     event.preventDefault();
     setError(null);
 
     const trimmedCustomerName =
-        customerName.trim();
+      customerName.trim();
 
     if (!trimmedCustomerName) {
-        setError("Customer name is required.");
-        return;
+      setError("Customer name is required.");
+      return;
     }
 
     if (items.length === 0) {
-        setError("Add at least one item.");
-        return;
+      setError("Add at least one item.");
+      return;
     }
 
     for (const item of items) {
-        if (!item.item_name.trim()) {
+      if (!item.item_name.trim()) {
         setError(
-            "Every item must have a name.",
+          "Every item must have a name.",
         );
         return;
-        }
+      }
 
-        if (item.quantity <= 0) {
+      if (item.quantity <= 0) {
         setError(
-            "Item quantity must be greater than zero.",
+          "Item quantity must be greater than zero.",
         );
         return;
-        }
+      }
 
-        if (item.unit_price < 0) {
+      if (item.unit_price < 0) {
         setError(
-            "Item price cannot be negative.",
+          "Item price cannot be negative.",
         );
         return;
-        }
+      }
     }
 
     setSaving(true);
 
     try {
-        const session = await getSession();
+      const session = await getSession();
 
-        if (!session?.access_token) {
+      if (!session?.access_token) {
         throw new Error(
-            "Your session has expired. Please log in again.",
+          "Your session has expired. Please log in again.",
         );
-        }
+      }
 
-        const savedBill = await saveBill(
+      const savedBill = await saveBill(
         session.access_token,
         {
-            customer_name: trimmedCustomerName,
-            customer_phone:
+          customer_name: trimmedCustomerName,
+          customer_phone:
             customerPhone.trim() || null,
-            customer_address:
+          customer_address:
             customerAddress.trim() || null,
-            items: items.map((item) => ({
+          items: items.map((item) => ({
             item_name: item.item_name.trim(),
             quantity: item.quantity,
             unit_price: item.unit_price,
-            })),
+          })),
         },
-        );
+      );
 
-        onSaved(savedBill);
+      onSaved(savedBill);
     } catch (err) {
-        setError(
+      setError(
         err instanceof Error
-            ? err.message
-            : "Unable to save bill.",
-        );
+          ? err.message
+          : "Unable to save bill.",
+      );
     } finally {
-        setSaving(false);
+      setSaving(false);
     }
-    }
+  }
 
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-6">
@@ -195,7 +271,7 @@ function BillEditor({
               onClick={onCancel}
               className="mb-4 text-sm font-medium text-blue-600"
             >
-              ← Back to Business Profile
+              ← Dashboard
             </button>
 
             <p className="text-sm font-medium text-blue-600">
@@ -224,6 +300,67 @@ function BillEditor({
               <div className="space-y-4">
                 <div>
                   <label
+                    htmlFor="saved-customer"
+                    className="mb-1 block text-sm font-medium text-slate-700"
+                  >
+                    Saved Customer
+                  </label>
+
+                  <select
+                    id="saved-customer"
+                    value={selectedCustomerId}
+                    onChange={(event) =>
+                      handleCustomerChange(
+                        event.target.value,
+                      )
+                    }
+                    disabled={
+                      isLoadingCustomers ||
+                      saving
+                    }
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500 disabled:cursor-not-allowed disabled:bg-slate-50"
+                  >
+                    <option value="">
+                      {isLoadingCustomers
+                        ? "Loading customers..."
+                        : customers.length > 0
+                          ? "Enter customer manually"
+                          : "No saved customers"}
+                    </option>
+
+                    {customers.map((customer) => (
+                      <option
+                        key={customer.id}
+                        value={customer.id}
+                      >
+                        {customer.name}
+                        {customer.phone
+                          ? ` — ${customer.phone}`
+                          : ""}
+                      </option>
+                    ))}
+                  </select>
+
+                  {customerLoadError && (
+                    <p className="mt-1.5 text-xs text-slate-500">
+                      Saved customers could not be
+                      loaded. You can still enter the
+                      customer manually.
+                    </p>
+                  )}
+
+                  {!isLoadingCustomers &&
+                    !customerLoadError &&
+                    customers.length > 0 && (
+                      <p className="mt-1.5 text-xs text-slate-500">
+                        Select a saved customer to
+                        automatically fill their details.
+                      </p>
+                    )}
+                </div>
+
+                <div>
+                  <label
                     htmlFor="customer-name"
                     className="mb-1 block text-sm font-medium text-slate-700"
                   >
@@ -235,11 +372,12 @@ function BillEditor({
                     type="text"
                     required
                     value={customerName}
-                    onChange={(event) =>
+                    onChange={(event) => {
                       setCustomerName(
                         event.target.value,
-                      )
-                    }
+                      );
+                      setSelectedCustomerId("");
+                    }}
                     className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500"
                     placeholder="Customer name"
                   />
@@ -257,11 +395,12 @@ function BillEditor({
                     id="customer-phone"
                     type="tel"
                     value={customerPhone}
-                    onChange={(event) =>
+                    onChange={(event) => {
                       setCustomerPhone(
                         event.target.value,
-                      )
-                    }
+                      );
+                      setSelectedCustomerId("");
+                    }}
                     className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500"
                     placeholder="9876543210"
                   />
@@ -279,11 +418,12 @@ function BillEditor({
                     id="customer-address"
                     rows={3}
                     value={customerAddress}
-                    onChange={(event) =>
+                    onChange={(event) => {
                       setCustomerAddress(
                         event.target.value,
-                      )
-                    }
+                      );
+                      setSelectedCustomerId("");
+                    }}
                     className="w-full resize-none rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500"
                     placeholder="Customer address"
                   />
@@ -464,11 +604,11 @@ function BillEditor({
             )}
 
             <button
-            type="submit"
-            disabled={saving}
-            className="w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
+              type="submit"
+              disabled={saving}
+              className="w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
             >
-            {saving ? "Saving..." : "Save Bill"}
+              {saving ? "Saving..." : "Save Bill"}
             </button>
           </form>
         </section>

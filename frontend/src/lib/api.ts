@@ -242,3 +242,104 @@ export async function getBill(
 
   return response.json();
 }
+
+export type Customer = {
+  id: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CreateCustomerRequest = {
+  name: string;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+};
+
+export type UpdateCustomerRequest =
+  CreateCustomerRequest;
+
+export async function getCustomers(
+  accessToken: string,
+): Promise<Customer[]> {
+  const response = await fetch(
+    `${API_URL}/customers`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+
+    throw new Error(
+      body?.detail ||
+        `Customers request failed: ${response.status}`,
+    );
+  }
+
+  return response.json();
+}
+
+export async function createCustomer(
+  accessToken: string,
+  customer: CreateCustomerRequest,
+): Promise<Customer> {
+  const response = await fetch(
+    `${API_URL}/customers`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(customer),
+    },
+  );
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+
+    throw new Error(
+      body?.detail ||
+        `Customer creation failed: ${response.status}`,
+    );
+  }
+
+  return response.json();
+}
+
+export async function updateCustomer(
+  accessToken: string,
+  customerId: string,
+  customer: UpdateCustomerRequest,
+): Promise<Customer> {
+  const response = await fetch(
+    `${API_URL}/customers/${customerId}`,
+    {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(customer),
+    },
+  );
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+
+    throw new Error(
+      body?.detail ||
+        `Customer update failed: ${response.status}`,
+    );
+  }
+
+  return response.json();
+}

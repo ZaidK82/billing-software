@@ -36,6 +36,7 @@ function BillPreview({
 
   const [downloadError, setDownloadError] =
     useState<string | null>(null);
+
   const businessLocation = [
     businessCity,
     businessState,
@@ -43,8 +44,8 @@ function BillPreview({
   ]
     .filter(Boolean)
     .join(", ");
- 
-   async function handleDownloadPdf() {
+
+  async function handleDownloadPdf() {
     setIsDownloading(true);
     setDownloadError(null);
 
@@ -90,50 +91,50 @@ function BillPreview({
     <main className="min-h-screen bg-slate-100 px-4 py-6">
       <div className="mx-auto max-w-2xl">
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-wrap items-center gap-4">
-        <button
-            type="button"
-            onClick={onBack}
-            className="text-sm font-medium text-blue-600"
-        >
-            ← Business Profile
-        </button>
-
-        <button
-            type="button"
-            onClick={onBackToBills}
-            className="text-sm font-medium text-blue-600"
-        >
-            ← Bills
-        </button>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-4">
             <button
-            type="button"
-            onClick={handleDownloadPdf}
-            disabled={isDownloading}
-            className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+              type="button"
+              onClick={onBack}
+              className="text-sm font-medium text-blue-600"
             >
-            {isDownloading
+              ← Dashboard
+            </button>
+
+            <button
+              type="button"
+              onClick={onBackToBills}
+              className="text-sm font-medium text-blue-600"
+            >
+              ← Bills
+            </button>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={handleDownloadPdf}
+              disabled={isDownloading}
+              className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isDownloading
                 ? "Preparing PDF..."
                 : "Download PDF"}
             </button>
 
             <button
-            type="button"
-            onClick={onCreateNew}
-            className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white"
+              type="button"
+              onClick={onCreateNew}
+              className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white"
             >
-            New Bill
+              New Bill
             </button>
-        </div>
+          </div>
         </div>
 
         {downloadError && (
-        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             {downloadError}
-        </div>
+          </div>
         )}
 
         <section className="overflow-hidden rounded-2xl bg-white shadow-sm">

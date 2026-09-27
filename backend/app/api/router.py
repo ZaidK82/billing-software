@@ -15,6 +15,7 @@ from app.models import (
     BillItem,
     Business,
     BusinessMembership,
+    Customer,
 )
 
 
@@ -87,6 +88,31 @@ class BillListItemResponse(BaseModel):
     customer_name: str | None
     total: Decimal
     created_at: object
+
+class CustomerCreate(BaseModel):
+    name: str
+    phone: str | None = None
+    email: str | None = None
+    address: str | None = None
+
+
+class CustomerUpdate(BaseModel):
+    name: str
+    phone: str | None = None
+    email: str | None = None
+    address: str | None = None
+
+
+class CustomerResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    name: str
+    phone: str | None
+    email: str | None
+    address: str | None
+    created_at: object
+    updated_at: object
 
 def get_user_business(
     user_id: UUID,
@@ -490,3 +516,128 @@ async def get_bill(
         )
 
     return bill
+
+@router.post(
+    "/customers",
+    response_model=CustomerResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_customer(
+    customer_data: CustomerCreate,
+    user_id: UUID = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    business = get_user_business(user_id, db)
+
+    name = customer_data.name.strip()
+
+    if not name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Customer name is required.",
+        )
+
+    customer = Customer(
+        business_id=business.id,
+        name=name,
+        phone=customer_data.phone,
+        email=customer_data.email,
+        address=customer_data.address,
+    )
+
+    db.add(customer)
+    db.commit()
+    db.refresh(customer)
+
+    return customer
+
+@router.get(
+    "/customers",
+    response_model=list[CustomerResponse],
+)
+async def get_customers(
+    user_id: UUID = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    business = get_user_business(user_id, db)
+
+    customers = db.scalars(
+        select(Customer)
+        .where(
+            Customer.business_id == business.id,
+        )
+        .order_by(
+            Customer.name.asc(),
+        )
+    ).all()
+
+    return customers
+
+@router.get(
+    "/customers/{customer_id}",
+    response_model=CustomerResponse,
+)
+async def get_customer(
+    customer_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    business = get_user_business(user_id, db)
+
+    customer = db.scalar(
+        select(Customer).where(
+            Customer.id == customer_id,
+            Customer.business_id == business.id,
+        )
+    )
+
+    if customer is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Customer not found.",
+        )
+
+    return customer
+
+@router.put(
+    "/customers/{customer_id}",
+    response_model=CustomerResponse,
+)
+async def update_customer(
+    customer_id: UUID,
+    customer_data: CustomerUpdate,
+    user_id: UUID = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    business = get_user_business(user_id, db)
+
+    customer = db.scalar(
+        select(Customer).where(
+            Customer.id == customer_id,
+            Customer.business_id == business.id,
+        )
+    )
+
+    if customer is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Customer not found.",
+        )
+
+    name = customer_data.name.strip()
+
+    if not name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Customer name is required.",
+        )
+
+    customer.name = name
+    customer.phone = customer_data.phone
+    customer.email = customer_data.email
+    customer.address = customer_data.address
+
+    db.commit()
+    db.refresh(customer)
+
+    return customer

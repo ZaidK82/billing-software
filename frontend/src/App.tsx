@@ -1,26 +1,32 @@
 import {
-  FormEvent,
   useEffect,
   useState,
 } from "react";
 
+import type { FormEvent } from "react";
+
+import Dashboard from "./components/dashboard/Dashboard";
 import BillEditor from "./components/billing/BillEditor";
 import BillPreview from "./components/billing/BillPreview";
 import BillHistory from "./components/billing/BillHistory";
+import CustomerList from "./components/customers/CustomerList";
+import CustomerForm from "./components/customers/CustomerForm";
 
 import {
   createBusiness,
-  getBusinessProfile,
-  getCurrentUser,
-  getHealth,
-  updateBusinessProfile,
-  type SavedBill,
-} from "./lib/api";
-
-import {
+  createCustomer,
   getBill,
   getBills,
+  getBusinessProfile,
+  getCurrentUser,
+  getCustomers,
+  getHealth,
+  updateBusinessProfile,
+  updateCustomer,
   type BillListItem,
+  type BusinessProfile,
+  type Customer,
+  type SavedBill,
 } from "./lib/api";
 
 import {
@@ -70,21 +76,46 @@ function App() {
     useState<string | null>(null);
 
   const [loading, setLoading] = useState(false);
-  const [profileLoading, setProfileLoading] =
-    useState(false);
+
+  const [authInitializing, setAuthInitializing] =
+    useState(true);
 
   const [savingProfile, setSavingProfile] =
     useState(false);
 
   const [screen, setScreen] = useState<
-    "profile" | "bill" | "history" | "preview"
-  >("profile");
+    | "dashboard"
+    | "profile"
+    | "bill"
+    | "history"
+    | "customers"
+    | "customer-form"
+    | "preview"
+  >("dashboard");
 
   const [savedBill, setSavedBill] =
     useState<SavedBill | null>(null);
 
   const [bills, setBills] =
     useState<BillListItem[]>([]);
+
+  const [customers, setCustomers] =
+    useState<Customer[]>([]);
+
+  const [isCustomersLoading, setIsCustomersLoading] =
+    useState(false);
+
+  const [customersError, setCustomersError] =
+    useState<string | null>(null);
+
+  const [editingCustomer, setEditingCustomer] =
+    useState<Customer | null>(null);
+
+  const [isCustomerSaving, setIsCustomerSaving] =
+    useState(false);
+
+  const [customerSaveError, setCustomerSaveError] =
+    useState<string | null>(null);
 
   const [isBillsLoading, setIsBillsLoading] =
     useState(false);
@@ -100,38 +131,47 @@ function App() {
 
         const session = await getSession();
 
-        if (session?.access_token) {
-          const user = await getCurrentUser(
-            session.access_token,
-          );
-
-          const businessData = await createBusiness(
-            session.access_token,
-          );
-
-          setCurrentUser({
-            ...user,
-            business_id: businessData.business_id,
-            business_name:
-              businessData.business_name,
-            role: businessData.role,
-            business_created:
-              businessData.created,
-          });
-
-          const profile =
-            await getBusinessProfile(
-              session.access_token,
-            );
-
-          setBusiness(profile);
+        if (!session?.access_token) {
+          setCurrentUser(null);
+          setBusiness(null);
+          return;
         }
+
+        const user = await getCurrentUser(
+          session.access_token,
+        );
+
+        const businessData =
+          await createBusiness(
+            session.access_token,
+          );
+
+        setCurrentUser({
+          ...user,
+          business_id:
+            businessData.business_id,
+          business_name:
+            businessData.business_name,
+          role: businessData.role,
+          business_created:
+            businessData.created,
+        });
+
+        const profile =
+          await getBusinessProfile(
+            session.access_token,
+          );
+
+        setBusiness(profile);
+        setScreen("dashboard");
       } catch (err) {
         setError(
           err instanceof Error
             ? err.message
             : "Unable to initialize application.",
         );
+      } finally {
+        setAuthInitializing(false);
       }
     }
 
@@ -144,6 +184,8 @@ function App() {
         if (!session?.access_token) {
           setCurrentUser(null);
           setBusiness(null);
+          setScreen("dashboard");
+          setAuthInitializing(false);
           return;
         }
 
@@ -174,12 +216,15 @@ function App() {
             );
 
           setBusiness(profile);
+          setScreen("dashboard");
         } catch (err) {
           setError(
             err instanceof Error
               ? err.message
               : "Unable to verify authenticated user.",
           );
+        } finally {
+          setAuthInitializing(false);
         }
       },
     );
@@ -232,6 +277,7 @@ function App() {
             );
 
           setBusiness(profile);
+          setScreen("dashboard");
 
           setMessage(
             "Registration successful.",
@@ -279,6 +325,7 @@ function App() {
           );
 
         setBusiness(profile);
+        setScreen("dashboard");
 
         setMessage("Login successful.");
       }
@@ -303,7 +350,9 @@ function App() {
 
       setCurrentUser(null);
       setBusiness(null);
-      setScreen("profile");
+      setSavedBill(null);
+      setEditingCustomer(null);
+      setScreen("dashboard");
 
       setMessage("Logged out successfully.");
     } catch (err) {
@@ -318,33 +367,158 @@ function App() {
   }
 
   async function loadBills() {
-  setIsBillsLoading(true);
-  setBillsError(null);
+    setIsBillsLoading(true);
+    setBillsError(null);
 
-  try {
-    const session = await getSession();
+    try {
+      const session = await getSession();
 
-    if (!session?.access_token) {
-      throw new Error(
-        "Your session has expired. Please log in again.",
+      if (!session?.access_token) {
+        throw new Error(
+          "Your session has expired. Please log in again.",
+        );
+      }
+
+      const savedBills = await getBills(
+        session.access_token,
       );
+
+      setBills(savedBills);
+    } catch (error) {
+      setBillsError(
+        error instanceof Error
+          ? error.message
+          : "Unable to load bills.",
+      );
+    } finally {
+      setIsBillsLoading(false);
+    }
+  }
+
+  async function loadCustomers() {
+    setIsCustomersLoading(true);
+    setCustomersError(null);
+
+    try {
+      const session = await getSession();
+
+      if (!session?.access_token) {
+        throw new Error(
+          "Your session has expired. Please log in again.",
+        );
+      }
+
+      const savedCustomers =
+        await getCustomers(
+          session.access_token,
+        );
+
+      setCustomers(savedCustomers);
+    } catch (error) {
+      setCustomersError(
+        error instanceof Error
+          ? error.message
+          : "Unable to load customers.",
+      );
+    } finally {
+      setIsCustomersLoading(false);
+    }
+  }
+
+  async function handleCreateCustomer(
+    customer: {
+      name: string;
+      phone: string;
+      email: string;
+      address: string;
+    },
+  ) {
+    setIsCustomerSaving(true);
+    setCustomerSaveError(null);
+
+    try {
+      const session = await getSession();
+
+      if (!session?.access_token) {
+        throw new Error(
+          "Your session has expired. Please log in again.",
+        );
+      }
+
+      await createCustomer(
+        session.access_token,
+        {
+          name: customer.name,
+          phone: customer.phone || null,
+          email: customer.email || null,
+          address: customer.address || null,
+        },
+      );
+
+      await loadCustomers();
+
+      setScreen("customers");
+    } catch (error) {
+      setCustomerSaveError(
+        error instanceof Error
+          ? error.message
+          : "Unable to save customer.",
+      );
+    } finally {
+      setIsCustomerSaving(false);
+    }
+  }
+
+  async function handleUpdateCustomer(
+    customer: {
+      name: string;
+      phone: string;
+      email: string;
+      address: string;
+    },
+  ) {
+    if (!editingCustomer) {
+      return;
     }
 
-    const savedBills = await getBills(
-      session.access_token,
-    );
+    setIsCustomerSaving(true);
+    setCustomerSaveError(null);
 
-    setBills(savedBills);
-  } catch (error) {
-    setBillsError(
-      error instanceof Error
-        ? error.message
-        : "Unable to load bills.",
-    );
-  } finally {
-    setIsBillsLoading(false);
+    try {
+      const session = await getSession();
+
+      if (!session?.access_token) {
+        throw new Error(
+          "Your session has expired. Please log in again.",
+        );
+      }
+
+      await updateCustomer(
+        session.access_token,
+        editingCustomer.id,
+        {
+          name: customer.name,
+          phone: customer.phone || null,
+          email: customer.email || null,
+          address: customer.address || null,
+        },
+      );
+
+      setEditingCustomer(null);
+
+      await loadCustomers();
+
+      setScreen("customers");
+    } catch (error) {
+      setCustomerSaveError(
+        error instanceof Error
+          ? error.message
+          : "Unable to update customer.",
+      );
+    } finally {
+      setIsCustomerSaving(false);
+    }
   }
-}
 
   async function handleProfileSubmit(
     event: FormEvent<HTMLFormElement>,
@@ -407,7 +581,43 @@ function App() {
     }
   }
 
+  if (authInitializing) {
+    return (
+      <main className="min-h-screen bg-slate-50 px-4 py-8">
+        <div className="flex min-h-[90vh] items-center justify-center">
+          <div className="text-center">
+            <p className="text-sm font-medium text-slate-600">
+              Loading Billing Software...
+            </p>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
   if (currentUser && business) {
+    if (screen === "dashboard") {
+      return (
+        <Dashboard
+          onCreateBill={() => {
+            setScreen("bill");
+          }}
+          onBills={() => {
+            setScreen("history");
+            void loadBills();
+          }}
+          onCustomers={() => {
+            setScreen("customers");
+            void loadCustomers();
+          }}
+          onBusinessProfile={() => {
+            setScreen("profile");
+          }}
+          onLogout={handleLogout}
+        />
+      );
+    }
+
     if (screen === "history") {
       return (
         <BillHistory
@@ -444,11 +654,67 @@ function App() {
             setScreen("bill");
           }}
           onBack={() => {
-            setScreen("profile");
+            setScreen("dashboard");
           }}
         />
       );
     }
+
+    if (screen === "customer-form") {
+      return (
+        <CustomerForm
+          customer={
+            editingCustomer
+              ? {
+                  name: editingCustomer.name,
+                  phone:
+                    editingCustomer.phone ?? "",
+                  email:
+                    editingCustomer.email ?? "",
+                  address:
+                    editingCustomer.address ?? "",
+                }
+              : undefined
+          }
+          isSaving={isCustomerSaving}
+          error={customerSaveError}
+          onSubmit={
+            editingCustomer
+              ? handleUpdateCustomer
+              : handleCreateCustomer
+          }
+          onCancel={() => {
+            setCustomerSaveError(null);
+            setEditingCustomer(null);
+            setScreen("customers");
+          }}
+        />
+      );
+    }
+
+    if (screen === "customers") {
+      return (
+        <CustomerList
+          customers={customers}
+          isLoading={isCustomersLoading}
+          error={customersError}
+          onAddCustomer={() => {
+            setCustomerSaveError(null);
+            setEditingCustomer(null);
+            setScreen("customer-form");
+          }}
+          onEditCustomer={(customer) => {
+            setCustomerSaveError(null);
+            setEditingCustomer(customer);
+            setScreen("customer-form");
+          }}
+          onBack={() => {
+            setScreen("dashboard");
+          }}
+        />
+      );
+    }
+
     if (
       screen === "preview" &&
       savedBill
@@ -469,7 +735,7 @@ function App() {
           }}
           onBack={() => {
             setSavedBill(null);
-            setScreen("profile");
+            setScreen("dashboard");
           }}
           onBackToBills={() => {
             setScreen("history");
@@ -478,10 +744,13 @@ function App() {
         />
       );
     }
+
     if (screen === "bill") {
       return (
         <BillEditor
-          onCancel={() => setScreen("profile")}
+          onCancel={() => {
+            setScreen("dashboard");
+          }}
           onSaved={(bill) => {
             setSavedBill(bill);
             setMessage(null);
@@ -490,12 +759,25 @@ function App() {
         />
       );
     }
+
     return (
       <main className="min-h-screen bg-slate-50 px-4 py-6">
         <div className="mx-auto max-w-lg">
           <section className="rounded-2xl bg-white p-5 shadow-sm">
             <div className="mb-6">
-              <p className="text-sm font-medium text-blue-600">
+              <div className="flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setScreen("dashboard");
+                  }}
+                  className="text-sm font-medium text-blue-600"
+                >
+                  ← Dashboard
+                </button>
+              </div>
+
+              <p className="mt-5 text-sm font-medium text-blue-600">
                 Billing Software
               </p>
 
@@ -507,26 +789,40 @@ function App() {
                 Enter the business details that will
                 appear on your invoices.
               </p>
-              <div className="mt-4 flex gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setScreen("history");
-                  void loadBills();
-                }}
-                className="flex-1 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700"
-              >
-                Bills
-              </button>
 
-              <button
-                type="button"
-                onClick={() => setScreen("bill")}
-                className="flex-1 rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white"
-              >
-                Create Bill
-              </button>
-            </div>
+              <div className="mt-4 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setScreen("history");
+                    void loadBills();
+                  }}
+                  className="flex-1 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700"
+                >
+                  Bills
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setScreen("bill");
+                  }}
+                  className="flex-1 rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white"
+                >
+                  Create Bill
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setScreen("customers");
+                    void loadCustomers();
+                  }}
+                  className="flex-1 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700"
+                >
+                  Customers
+                </button>
+              </div>
             </div>
 
             <form
@@ -668,7 +964,7 @@ function App() {
                         state: event.target.value,
                       })
                     }
-                    className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500"
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500"
                     placeholder="Maharashtra"
                   />
                 </div>

@@ -26,7 +26,7 @@ function BillHistory({
             onClick={onBack}
             className="text-sm font-medium text-blue-600"
           >
-            ← Business Profile
+            ← Dashboard
           </button>
 
           <button
