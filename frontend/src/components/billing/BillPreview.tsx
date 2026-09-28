@@ -16,6 +16,8 @@ type BillPreviewProps = {
   businessCity: string | null;
   businessState: string | null;
   businessPincode: string | null;
+  businessGstin: string | null;
+  businessUdyamNumber: string | null;
   onCreateNew: () => void;
   onBack: () => void;
   onBackToBills: () => void;
@@ -30,6 +32,8 @@ function BillPreview({
   businessCity,
   businessState,
   businessPincode,
+  businessGstin,
+  businessUdyamNumber,
   onCreateNew,
   onBack,
   onBackToBills,
@@ -449,15 +453,27 @@ function BillPreview({
                 )}
 
                 {businessEmail && (
-                  <p className="break-words text-sm text-slate-600">
+                <p className="break-words text-sm text-slate-600">
                     {businessEmail}
-                  </p>
+                </p>
+                )}
+
+                {businessGstin && (
+                <p className="mt-1 break-words text-sm text-slate-600">
+                    GSTIN: {businessGstin}
+                </p>
+                )}
+
+                {businessUdyamNumber && (
+                <p className="break-words text-sm text-slate-600">
+                    Udyam No.: {businessUdyamNumber}
+                </p>
                 )}
 
                 {businessAddress && (
-                  <p className="mt-1 whitespace-pre-line break-words text-sm text-slate-600">
+                <p className="mt-1 whitespace-pre-line break-words text-sm text-slate-600">
                     {businessAddress}
-                  </p>
+                </p>
                 )}
 
                 {businessLocation && (

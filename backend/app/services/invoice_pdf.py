@@ -713,6 +713,16 @@ def build_invoice_pdf(
             f"Email: {_clean_text(business.email)}"
         )
 
+    if business.gstin:
+        business_lines.append(
+            f"GSTIN: {_clean_text(business.gstin)}"
+        )
+
+    if business.udyam_number:
+        business_lines.append(
+            f"Udyam No.: {_clean_text(business.udyam_number)}"
+        )
+
     address_parts: list[str] = []
 
     if business.address:

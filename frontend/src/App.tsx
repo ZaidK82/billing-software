@@ -705,6 +705,8 @@ function App() {
           businessCity={business.city}
           businessState={business.state}
           businessPincode={business.pincode}
+          businessGstin={business.gstin}
+          businessUdyamNumber={business.udyam_number}
           onCreateNew={() => {
             setSavedBill(null);
             setScreen("bill");
