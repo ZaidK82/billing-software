@@ -1,8 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect} from "react";
 
-import { downloadBillPdf } from "../../lib/api";
+import { downloadBillPdf , getBusinessAssetUrl } from "../../lib/api";
 import { getSession } from "../../lib/auth";
-import type { SavedBill } from "../../lib/api";
+import type {
+  InvoiceColumn,
+  SavedBill,
+} from "../../lib/api";
 
 type BillPreviewProps = {
   bill: SavedBill;
@@ -31,11 +34,64 @@ function BillPreview({
   onBack,
   onBackToBills,
 }: BillPreviewProps) {
+  console.log("Bill preview terms:", bill.terms_and_conditions);
   const [isDownloading, setIsDownloading] =
     useState(false);
 
   const [downloadError, setDownloadError] =
     useState<string | null>(null);
+  
+    const [logoUrl, setLogoUrl] = useState<string | null>(
+    null,
+  );
+
+  const [signatureUrl, setSignatureUrl] =
+    useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadBusinessAssets() {
+      try {
+        const session = await getSession();
+
+        if (!session?.access_token) {
+          return;
+        }
+
+        const [logoResult, signatureResult] =
+          await Promise.all([
+            getBusinessAssetUrl(
+              session.access_token,
+              "logo",
+            ).catch(() => null),
+
+            getBusinessAssetUrl(
+              session.access_token,
+              "signature",
+            ).catch(() => null),
+          ]);
+
+        if (cancelled) {
+          return;
+        }
+
+        setLogoUrl(logoResult?.url ?? null);
+        setSignatureUrl(signatureResult?.url ?? null);
+      } catch {
+        if (!cancelled) {
+          setLogoUrl(null);
+          setSignatureUrl(null);
+        }
+      }
+    }
+
+    void loadBusinessAssets();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const businessLocation = [
     businessCity,
@@ -44,6 +100,237 @@ function BillPreview({
   ]
     .filter(Boolean)
     .join(", ");
+
+    const defaultInvoiceColumns: InvoiceColumn[] = [
+    {
+        key: "item_name",
+        label: "Item",
+        type: "text",
+        source: "core",
+        position: 1,
+        required: true,
+    },
+    {
+        key: "quantity",
+        label: "Qty",
+        type: "number",
+        source: "core",
+        position: 2,
+        required: true,
+    },
+    {
+        key: "unit_price",
+        label: "Unit Price",
+        type: "number",
+        source: "core",
+        position: 3,
+        required: true,
+    },
+    {
+        key: "line_total",
+        label: "Total",
+        type: "number",
+        source: "core",
+        position: 4,
+        required: true,
+    },
+    ];
+
+    const invoiceColumns: InvoiceColumn[] = (
+    bill.invoice_columns?.length
+        ? bill.invoice_columns
+        : defaultInvoiceColumns
+    ).sort((a, b) => a.position - b.position);
+
+  function getColumnValue(
+    item: SavedBill["items"][number],
+    column: InvoiceColumn,
+  ): string {
+    if (column.source === "core") {
+      switch (column.key) {
+        case "item_name":
+          return item.item_name;
+
+        case "quantity":
+          return String(item.quantity);
+
+        case "unit_price":
+          return `₹${Number(
+            item.unit_price,
+          ).toFixed(2)}`;
+
+        case "line_total":
+          return `₹${Number(
+            item.line_total,
+          ).toFixed(2)}`;
+
+        default:
+          return "";
+      }
+    }
+
+    const value =
+      item.custom_values?.[column.key];
+
+    if (
+      value === undefined ||
+      value === null ||
+      String(value).trim() === ""
+    ) {
+      return "—";
+    }
+
+    if (column.type === "number") {
+      const numberValue = Number(value);
+
+      if (!Number.isNaN(numberValue)) {
+        return numberValue.toFixed(2);
+      }
+    }
+
+    return String(value);
+  }
+
+  function numberToWordsUnder1000(
+    number: number,
+  ): string {
+    const ones = [
+      "Zero",
+      "One",
+      "Two",
+      "Three",
+      "Four",
+      "Five",
+      "Six",
+      "Seven",
+      "Eight",
+      "Nine",
+      "Ten",
+      "Eleven",
+      "Twelve",
+      "Thirteen",
+      "Fourteen",
+      "Fifteen",
+      "Sixteen",
+      "Seventeen",
+      "Eighteen",
+      "Nineteen",
+    ];
+
+    const tens = [
+      "",
+      "",
+      "Twenty",
+      "Thirty",
+      "Forty",
+      "Fifty",
+      "Sixty",
+      "Seventy",
+      "Eighty",
+      "Ninety",
+    ];
+
+    if (number < 20) {
+      return ones[number];
+    }
+
+    if (number < 100) {
+      const remainder = number % 10;
+
+      if (remainder === 0) {
+        return tens[Math.floor(number / 10)];
+      }
+
+      return `${tens[Math.floor(number / 10)]} ${ones[remainder]}`;
+    }
+
+    const remainder = number % 100;
+
+    if (remainder === 0) {
+      return `${ones[Math.floor(number / 100)]} Hundred`;
+    }
+
+    return `${ones[Math.floor(number / 100)]} Hundred ${numberToWordsUnder1000(
+      remainder,
+    )}`;
+  }
+
+  function numberToWords(number: number): string {
+    if (number === 0) {
+      return "Zero";
+    }
+
+    const parts: string[] = [];
+
+    let remaining = number;
+
+    const crore = Math.floor(
+      remaining / 10_000_000,
+    );
+    remaining %= 10_000_000;
+
+    const lakh = Math.floor(
+      remaining / 100_000,
+    );
+    remaining %= 100_000;
+
+    const thousand = Math.floor(
+      remaining / 1_000,
+    );
+    remaining %= 1_000;
+
+    if (crore) {
+      parts.push(
+        `${numberToWordsUnder1000(crore)} Crore`,
+      );
+    }
+
+    if (lakh) {
+      parts.push(
+        `${numberToWordsUnder1000(lakh)} Lakh`,
+      );
+    }
+
+    if (thousand) {
+      parts.push(
+        `${numberToWordsUnder1000(thousand)} Thousand`,
+      );
+    }
+
+    if (remaining) {
+      parts.push(
+        numberToWordsUnder1000(remaining),
+      );
+    }
+
+    return parts.join(" ");
+  }
+
+  function amountInWords(value: number): string {
+    const amount = Math.abs(
+      Math.round(value * 100) / 100,
+    );
+
+    const rupees = Math.floor(amount);
+
+    const paise = Math.round(
+      (amount - rupees) * 100,
+    );
+
+    const words = numberToWords(rupees);
+
+    if (paise > 0) {
+      return `${words} Rupees And ${numberToWordsUnder1000(
+        paise,
+      )} Paise Only`;
+    }
+
+    return `${words} Only`;
+  }
+
+  const billAmountInWords = amountInWords(
+    Number(bill.total),
+  );
 
   async function handleDownloadPdf() {
     setIsDownloading(true);
@@ -141,8 +428,18 @@ function BillPreview({
           <div className="border-b border-slate-200 p-5 sm:p-6 lg:p-8">
             <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
+                {logoUrl && (
+                    <div className="mb-4">
+                    <img
+                        src={logoUrl}
+                        alt={`${businessName} logo`}
+                        className="max-h-20 max-w-[180px] object-contain"
+                    />
+                    </div>
+                )}
+
                 <h1 className="break-words text-xl font-bold text-slate-900 sm:text-2xl">
-                  {businessName}
+                    {businessName}
                 </h1>
 
                 {businessPhone && (
@@ -214,21 +511,27 @@ function BillPreview({
             <table className="w-full min-w-[520px] text-sm">
               <thead className="bg-slate-50">
                 <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
-                  <th className="px-5 py-3 sm:px-6">
-                    Item
-                  </th>
-
-                  <th className="px-3 py-3 text-right">
-                    Qty
-                  </th>
-
-                  <th className="px-3 py-3 text-right">
-                    Unit Price
-                  </th>
-
-                  <th className="px-5 py-3 text-right sm:px-6">
-                    Total
-                  </th>
+                  {invoiceColumns.map((column) => (
+                    <th
+                      key={column.key}
+                      className={`px-3 py-3 first:pl-5 last:pr-5 sm:first:pl-6 sm:last:pr-6 ${
+                        column.type === "number" ||
+                        column.source === "core" &&
+                        (
+                          column.key ===
+                            "quantity" ||
+                          column.key ===
+                            "unit_price" ||
+                          column.key ===
+                            "line_total"
+                        )
+                          ? "text-right"
+                          : ""
+                      }`}
+                    >
+                      {column.label}
+                    </th>
+                  ))}
                 </tr>
               </thead>
 
@@ -238,33 +541,54 @@ function BillPreview({
                     key={item.id}
                     className="border-t border-slate-100"
                   >
-                    <td className="max-w-[240px] break-words px-5 py-4 font-medium text-slate-900 sm:px-6">
-                      {item.item_name}
-                    </td>
+                    {invoiceColumns.map(
+                      (column) => {
+                        const value =
+                          getColumnValue(
+                            item,
+                            column,
+                          );
 
-                    <td className="px-3 py-4 text-right text-slate-600">
-                      {item.quantity}
-                    </td>
+                        const isNumeric =
+                          column.type ===
+                            "number" ||
+                          (
+                            column.source ===
+                              "core" &&
+                            (
+                              column.key ===
+                                "quantity" ||
+                              column.key ===
+                                "unit_price" ||
+                              column.key ===
+                                "line_total"
+                            )
+                          );
 
-                    <td className="whitespace-nowrap px-3 py-4 text-right text-slate-600">
-                      ₹
-                      {Number(
-                        item.unit_price,
-                      ).toFixed(2)}
-                    </td>
-
-                    <td className="whitespace-nowrap px-5 py-4 text-right font-medium text-slate-900 sm:px-6">
-                      ₹
-                      {Number(
-                        item.line_total,
-                      ).toFixed(2)}
-                    </td>
+                        return (
+                          <td
+                            key={column.key}
+                            className={`max-w-[240px] break-words px-3 py-4 text-slate-600 first:pl-5 last:pr-5 sm:first:pl-6 sm:last:pr-6 ${
+                              isNumeric
+                                ? "text-right"
+                                : ""
+                            } ${
+                              column.key ===
+                              "item_name"
+                                ? "font-medium text-slate-900"
+                                : ""
+                            }`}
+                          >
+                            {value}
+                          </td>
+                        );
+                      },
+                    )}
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-
           <div className="border-t border-slate-200 p-5 sm:p-6 lg:p-8">
             <div className="ml-auto w-full max-w-xs space-y-2">
               <div className="flex justify-between gap-6 text-sm text-slate-600">
@@ -289,6 +613,46 @@ function BillPreview({
                 </span>
               </div>
             </div>
+
+            <div className="mt-5 border-t border-slate-100 pt-4">
+              <p className="text-xs font-semibold text-slate-500">
+                Amount in Words:
+              </p>
+
+              <p className="mt-1 text-sm leading-6 text-slate-700">
+                {billAmountInWords}
+              </p>
+            </div>
+
+            {bill.terms_and_conditions && (
+              <div className="mt-5 border-t border-slate-100 pt-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Terms & Conditions
+                </p>
+
+                <p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-700">
+                  {bill.terms_and_conditions}
+                </p>
+              </div>
+            )}
+
+            {signatureUrl && (
+              <div className="mt-8 flex justify-end">
+                <div className="w-48 text-center">
+                  <img
+                    src={signatureUrl}
+                    alt="Authorized signature"
+                    className="mx-auto max-h-20 max-w-full object-contain"
+                  />
+
+                  <div className="mt-2 border-t border-slate-300 pt-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Authorized Signatory
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </section>
 

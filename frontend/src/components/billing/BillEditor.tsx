@@ -16,7 +16,9 @@ import {
 } from "../../lib/api";
 
 import type {
+  BusinessProfile,
   Customer,
+  InvoiceColumn,
   SavedBill,
 } from "../../lib/api";
 
@@ -25,12 +27,57 @@ type BillItem = {
   item_name: string;
   quantity: number;
   unit_price: number;
+  custom_values: Record<string, unknown>;
 };
 
 type BillEditorProps = {
+  business: BusinessProfile;
   onCancel: () => void;
   onSaved: (bill: SavedBill) => void;
 };
+
+const DEFAULT_COLUMNS: InvoiceColumn[] = [
+  {
+    key: "item_name",
+    label: "Product Description",
+    type: "text",
+    source: "core",
+    position: 1,
+    required: true,
+  },
+  {
+    key: "quantity",
+    label: "Qty",
+    type: "number",
+    source: "core",
+    position: 2,
+    required: true,
+  },
+  {
+    key: "unit",
+    label: "Unit",
+    type: "text",
+    source: "custom",
+    position: 3,
+    required: false,
+  },
+  {
+    key: "unit_price",
+    label: "Rate",
+    type: "number",
+    source: "core",
+    position: 4,
+    required: true,
+  },
+  {
+    key: "line_total",
+    label: "Amount",
+    type: "number",
+    source: "core",
+    position: 5,
+    required: true,
+  },
+];
 
 function createItem(): BillItem {
   return {
@@ -38,13 +85,57 @@ function createItem(): BillItem {
     item_name: "",
     quantity: 1,
     unit_price: 0,
+    custom_values: {},
   };
 }
 
+function getInputValue(
+  item: BillItem,
+  column: InvoiceColumn,
+): string | number {
+  if (column.source === "core") {
+    switch (column.key) {
+      case "item_name":
+        return item.item_name;
+
+      case "quantity":
+        return item.quantity;
+
+      case "unit_price":
+        return item.unit_price;
+
+      case "line_total":
+        return item.quantity * item.unit_price;
+
+      default:
+        return "";
+    }
+  }
+
+  const value = item.custom_values[column.key];
+
+  if (value === null || value === undefined) {
+    return "";
+  }
+
+  return typeof value === "string" ||
+    typeof value === "number"
+    ? value
+    : String(value);
+}
+
 function BillEditor({
+  business,
   onCancel,
   onSaved,
 }: BillEditorProps) {
+  const invoiceColumns =
+    business.invoice_columns.length > 0
+      ? [...business.invoice_columns].sort(
+          (a, b) => a.position - b.position,
+        )
+      : DEFAULT_COLUMNS;
+
   const [customerName, setCustomerName] =
     useState("");
 
@@ -66,9 +157,13 @@ function BillEditor({
   const [customerLoadError, setCustomerLoadError] =
     useState<string | null>(null);
 
-  const [items, setItems] = useState<BillItem[]>([
-    createItem(),
-  ]);
+  const [items, setItems] = useState<BillItem[]>([]);
+
+  const [draftItem, setDraftItem] =
+    useState<BillItem>(createItem());
+
+  const [editingItemId, setEditingItemId] =
+    useState<string | null>(null);
 
   const [error, setError] =
     useState<string | null>(null);
@@ -119,6 +214,48 @@ function BillEditor({
 
   const total = subtotal;
 
+  function isDraftItemValid() {
+    if (!draftItem.item_name.trim()) {
+        return false;
+    }
+
+    if (draftItem.quantity <= 0) {
+        return false;
+    }
+
+    if (draftItem.unit_price < 0) {
+        return false;
+    }
+
+    for (const column of invoiceColumns) {
+        if (
+        column.source === "custom" &&
+        column.required
+        ) {
+        const value =
+            draftItem.custom_values[column.key];
+
+        if (
+            value === undefined ||
+            value === null ||
+            String(value).trim() === ""
+        ) {
+            return false;
+        }
+        }
+    }
+
+    return true;
+    }
+
+    const canAddOrUpdateItem =
+    isDraftItemValid();
+
+    const canSaveBill =
+    customerName.trim().length > 0 &&
+    items.length > 0 &&
+    !saving;
+
   function handleCustomerChange(
     customerId: string,
   ) {
@@ -143,43 +280,85 @@ function BillEditor({
     setCustomerPhone(customer.phone ?? "");
     setCustomerAddress(customer.address ?? "");
   }
+function updateCoreItem(
+  field:
+    | "item_name"
+    | "quantity"
+    | "unit_price",
+  value: string | number,
+) {
+  setDraftItem((currentItem) => ({
+    ...currentItem,
+    [field]: value,
+  }));
+}
 
-  function updateItem(
-    itemId: string,
-    field: keyof Omit<BillItem, "id">,
-    value: string | number,
-  ) {
+function updateCustomValue(
+  columnKey: string,
+  value: string,
+) {
+  setDraftItem((currentItem) => ({
+    ...currentItem,
+    custom_values: {
+      ...currentItem.custom_values,
+      [columnKey]: value,
+    },
+  }));
+}
+
+function resetDraftItem() {
+  setDraftItem(createItem());
+  setEditingItemId(null);
+}
+
+function addOrUpdateItem() {
+  if (editingItemId) {
     setItems((currentItems) =>
       currentItems.map((item) =>
-        item.id === itemId
+        item.id === editingItemId
           ? {
-              ...item,
-              [field]: value,
+              ...draftItem,
+              id: editingItemId,
             }
           : item,
       ),
     );
+
+    resetDraftItem();
+    return;
   }
 
-  function addItem() {
-    setItems((currentItems) => [
-      ...currentItems,
-      createItem(),
-    ]);
+  setItems((currentItems) => [
+    ...currentItems,
+    draftItem,
+  ]);
+
+  resetDraftItem();
+}
+
+function editItem(item: BillItem) {
+  setDraftItem({
+    ...item,
+    custom_values: {
+      ...item.custom_values,
+    },
+  });
+
+  setEditingItemId(item.id);
+}
+
+function removeItem(itemId: string) {
+  setItems((currentItems) =>
+    currentItems.filter(
+      (item) => item.id !== itemId,
+    ),
+  );
+
+  if (editingItemId === itemId) {
+    resetDraftItem();
   }
-
-  function removeItem(itemId: string) {
-    setItems((currentItems) => {
-      if (currentItems.length === 1) {
-        return currentItems;
-      }
-
-      return currentItems.filter(
-        (item) => item.id !== itemId,
-      );
-    });
-  }
-
+}
+  
   async function handleSubmit(
     event: FormEvent<HTMLFormElement>,
   ) {
@@ -195,14 +374,14 @@ function BillEditor({
     }
 
     if (items.length === 0) {
-      setError("Add at least one item.");
-      return;
+    setError("Add at least one item.");
+    return;
     }
 
     for (const item of items) {
       if (!item.item_name.trim()) {
         setError(
-          "Every item must have a name.",
+          "Every item must have a product or service name.",
         );
         return;
       }
@@ -219,6 +398,27 @@ function BillEditor({
           "Item price cannot be negative.",
         );
         return;
+      }
+
+      for (const column of invoiceColumns) {
+        if (
+          column.source === "custom" &&
+          column.required
+        ) {
+          const value =
+            item.custom_values[column.key];
+
+          if (
+            value === undefined ||
+            value === null ||
+            String(value).trim() === ""
+          ) {
+            setError(
+              `${column.label} is required for every item.`,
+            );
+            return;
+          }
+        }
       }
     }
 
@@ -241,10 +441,12 @@ function BillEditor({
             customerPhone.trim() || null,
           customer_address:
             customerAddress.trim() || null,
+          invoice_columns: invoiceColumns,
           items: items.map((item) => ({
             item_name: item.item_name.trim(),
             quantity: item.quantity,
             unit_price: item.unit_price,
+            custom_values: item.custom_values,
           })),
         },
       );
@@ -434,151 +636,333 @@ function BillEditor({
             </section>
 
             <section>
-              <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="mb-4">
                 <h2 className="text-base font-semibold text-slate-900">
-                  Items
+                Items
                 </h2>
 
-                <button
-                  type="button"
-                  onClick={addItem}
-                  className="self-start rounded-lg px-2 py-2 text-sm font-semibold text-blue-600 transition hover:bg-blue-50 active:bg-blue-100 sm:self-auto"
-                >
-                  + Add Item
-                </button>
-              </div>
+                <p className="mt-1 text-xs text-slate-500">
+                Fill in the item details and add the item to
+                the bill. Added items appear below.
+                </p>
+            </div>
 
-              <div className="space-y-4">
-                {items.map((item, index) => {
-                  const lineTotal =
-                    item.quantity *
-                    item.unit_price;
+            {/* Fixed item entry block */}
+            <div className="rounded-xl border-2 border-blue-100 bg-blue-50/40 p-4 sm:p-5">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                <div>
+                    <p className="text-sm font-semibold text-slate-900">
+                    {editingItemId
+                        ? "Edit Item"
+                        : "Add Item"}
+                    </p>
 
-                  return (
-                    <div
-                      key={item.id}
-                      className="rounded-xl border border-slate-200 p-4 sm:p-5"
+                    <p className="mt-1 text-xs text-slate-500">
+                    {editingItemId
+                        ? "Update the item and save your changes."
+                        : "Enter the details for the next item."}
+                    </p>
+                </div>
+
+                {editingItemId && (
+                    <button
+                    type="button"
+                    onClick={resetDraftItem}
+                    className="rounded-lg px-2 py-2 text-xs font-medium text-slate-600 transition hover:bg-white active:bg-slate-100"
                     >
-                      <div className="mb-4 flex items-center justify-between gap-3">
-                        <p className="text-sm font-semibold text-slate-800">
-                          Item {index + 1}
-                        </p>
+                    Cancel Edit
+                    </button>
+                )}
+                </div>
 
-                        {items.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              removeItem(
-                                item.id,
-                              )
-                            }
-                            className="rounded-lg px-2 py-2 text-xs font-medium text-red-600 transition hover:bg-red-50 active:bg-red-100"
-                          >
-                            Remove
-                          </button>
-                        )}
-                      </div>
+                <div className="space-y-4">
+                {invoiceColumns.map((column) => (
+                    <div key={column.key}>
+                    <label
+                        htmlFor={`draft-item-${column.key}`}
+                        className="mb-1 block text-xs font-medium text-slate-600"
+                    >
+                        {column.label}
+                        {column.required ? " *" : ""}
+                    </label>
 
-                      <div className="space-y-4">
-                        <div>
-                          <label
-                            htmlFor={`item-name-${item.id}`}
-                            className="mb-1 block text-xs font-medium text-slate-600"
-                          >
-                            Item Name *
-                          </label>
-
-                          <input
-                            id={`item-name-${item.id}`}
+                    {column.source === "core" &&
+                        column.key === "item_name" && (
+                        <input
+                            id={`draft-item-${column.key}`}
                             type="text"
-                            value={item.item_name}
+                            value={draftItem.item_name}
                             onChange={(event) =>
-                              updateItem(
-                                item.id,
+                            updateCoreItem(
                                 "item_name",
                                 event.target.value,
-                              )
+                            )
                             }
-                            className="min-h-11 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+                            className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"
                             placeholder="Product or service"
-                          />
+                        />
+                        )}
+
+                    {column.source === "core" &&
+                        column.key === "quantity" && (
+                        <input
+                            id={`draft-item-${column.key}`}
+                            type="number"
+                            min="1"
+                            step="1"
+                            value={draftItem.quantity}
+                            onChange={(event) =>
+                            updateCoreItem(
+                                "quantity",
+                                Number(event.target.value),
+                            )
+                            }
+                            className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+                        />
+                        )}
+
+                    {column.source === "core" &&
+                        column.key === "unit_price" && (
+                        <input
+                            id={`draft-item-${column.key}`}
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={draftItem.unit_price}
+                            onChange={(event) =>
+                            updateCoreItem(
+                                "unit_price",
+                                Number(event.target.value),
+                            )
+                            }
+                            className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+                        />
+                        )}
+
+                    {column.source === "core" &&
+                        column.key === "line_total" && (
+                        <div className="flex min-h-11 items-center rounded-lg bg-white px-3 py-2.5">
+                            <span className="text-sm font-semibold text-slate-900">
+                            ₹
+                            {(
+                                draftItem.quantity *
+                                draftItem.unit_price
+                            ).toFixed(2)}
+                            </span>
                         </div>
+                        )}
 
-                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_auto]">
-                          <div>
-                            <label
-                              htmlFor={`item-quantity-${item.id}`}
-                              className="mb-1 block text-xs font-medium text-slate-600"
-                            >
-                              Quantity
-                            </label>
+                    {column.source === "custom" &&
+                        column.type === "number" && (
+                        <input
+                            id={`draft-item-${column.key}`}
+                            type="number"
+                            step="0.01"
+                            value={
+                            String(
+                                draftItem.custom_values[
+                                column.key
+                                ] ?? "",
+                            )
+                            }
+                            onChange={(event) =>
+                            updateCustomValue(
+                                column.key,
+                                event.target.value,
+                            )
+                            }
+                            className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+                        />
+                        )}
 
-                            <input
-                              id={`item-quantity-${item.id}`}
-                              type="number"
-                              min="1"
-                              step="1"
-                              value={item.quantity}
-                              onChange={(event) =>
-                                updateItem(
-                                  item.id,
-                                  "quantity",
-                                  Number(
-                                    event.target
-                                      .value,
-                                  ),
-                                )
-                              }
-                              className="min-h-11 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-blue-500"
-                            />
-                          </div>
+                    {column.source === "custom" &&
+                        column.type === "date" && (
+                        <input
+                            id={`draft-item-${column.key}`}
+                            type="date"
+                            value={String(
+                            draftItem.custom_values[
+                                column.key
+                            ] ?? "",
+                            )}
+                            onChange={(event) =>
+                            updateCustomValue(
+                                column.key,
+                                event.target.value,
+                            )
+                            }
+                            className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+                        />
+                        )}
 
-                          <div>
-                            <label
-                              htmlFor={`item-price-${item.id}`}
-                              className="mb-1 block text-xs font-medium text-slate-600"
-                            >
-                              Unit Price
-                            </label>
-
-                            <input
-                              id={`item-price-${item.id}`}
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              value={item.unit_price}
-                              onChange={(event) =>
-                                updateItem(
-                                  item.id,
-                                  "unit_price",
-                                  Number(
-                                    event.target
-                                      .value,
-                                  ),
-                                )
-                              }
-                              className="min-h-11 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-blue-500"
-                            />
-                          </div>
-
-                          <div className="flex min-h-11 items-end">
-                            <div className="flex w-full items-center justify-between rounded-lg bg-slate-50 px-3 py-2.5 lg:min-w-36">
-                              <span className="text-xs font-medium text-slate-500 lg:hidden">
-                                Line Total
-                              </span>
-
-                              <span className="text-sm font-semibold text-slate-900">
-                                ₹
-                                {lineTotal.toFixed(2)}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
+                    {column.source === "custom" &&
+                        column.type !== "number" &&
+                        column.type !== "date" && (
+                        <input
+                            id={`draft-item-${column.key}`}
+                            type="text"
+                            value={String(
+                            draftItem.custom_values[
+                                column.key
+                            ] ?? "",
+                            )}
+                            onChange={(event) =>
+                            updateCustomValue(
+                                column.key,
+                                event.target.value,
+                            )
+                            }
+                            className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+                            placeholder={column.label}
+                        />
+                        )}
                     </div>
-                  );
-                })}
-              </div>
+                ))}
+                </div>
+
+                <button
+                type="button"
+                onClick={addOrUpdateItem}
+                disabled={!canAddOrUpdateItem || saving}
+                className="mt-5 min-h-11 w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 active:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                {editingItemId
+                    ? "Update Item"
+                    : "+ Add Item"}
+                </button>
+            </div>
+
+            {/* Added item cards */}
+            {items.length > 0 && (
+                <div className="mt-6">
+                <div className="mb-3 flex items-center justify-between">
+                    <h3 className="text-sm font-semibold text-slate-900">
+                    Added Items
+                    </h3>
+
+                    <span className="text-xs text-slate-500">
+                    {items.length}{" "}
+                    {items.length === 1
+                        ? "item"
+                        : "items"}
+                    </span>
+                </div>
+
+                <div className="space-y-3">
+                    {items.map((item, index) => {
+                    const lineTotal =
+                        item.quantity * item.unit_price;
+
+                    return (
+                        <article
+                        key={item.id}
+                        className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+                        >
+                        <div className="flex items-start justify-between gap-3">
+                            <div>
+                            <p className="text-xs font-medium text-slate-500">
+                                Item {index + 1}
+                            </p>
+
+                            <h4 className="mt-1 text-sm font-semibold text-slate-900">
+                                {item.item_name}
+                            </h4>
+                            </div>
+
+                            <div className="flex shrink-0 gap-1">
+                            <button
+                                type="button"
+                                onClick={() =>
+                                editItem(item)
+                                }
+                                className="rounded-lg px-2.5 py-2 text-xs font-semibold text-blue-600 transition hover:bg-blue-50 active:bg-blue-100"
+                            >
+                                Edit
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={() =>
+                                removeItem(item.id)
+                                }
+                                className="rounded-lg px-2.5 py-2 text-xs font-semibold text-red-600 transition hover:bg-red-50 active:bg-red-100"
+                            >
+                                Remove
+                            </button>
+                            </div>
+                        </div>
+
+                        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                            {invoiceColumns
+                            .filter(
+                                (column) =>
+                                column.key !==
+                                "item_name",
+                            )
+                            .map((column) => {
+                                let value:
+                                | string
+                                | number = "";
+
+                                if (
+                                column.source === "core"
+                                ) {
+                                if (
+                                    column.key ===
+                                    "quantity"
+                                ) {
+                                    value = item.quantity;
+                                } else if (
+                                    column.key ===
+                                    "unit_price"
+                                ) {
+                                    value =
+                                    `₹${item.unit_price.toFixed(2)}`;
+                                } else if (
+                                    column.key ===
+                                    "line_total"
+                                ) {
+                                    value =
+                                    `₹${lineTotal.toFixed(2)}`;
+                                }
+                                } else {
+                                const customValue =
+                                    item.custom_values[
+                                    column.key
+                                    ];
+
+                                value =
+                                    customValue ===
+                                    undefined ||
+                                    customValue === null
+                                    ? "—"
+                                    : String(
+                                        customValue,
+                                        );
+                                }
+
+                                return (
+                                <div
+                                    key={column.key}
+                                    className="rounded-lg bg-slate-50 px-3 py-2"
+                                >
+                                    <p className="text-[11px] font-medium text-slate-500">
+                                    {column.label}
+                                    </p>
+
+                                    <p className="mt-0.5 break-words text-xs font-semibold text-slate-800">
+                                    {value}
+                                    </p>
+                                </div>
+                                );
+                            })}
+                        </div>
+                        </article>
+                    );
+                    })}
+                </div>
+                </div>
+            )}
             </section>
 
             <section className="rounded-xl bg-slate-50 p-4 sm:p-5">
@@ -602,7 +986,7 @@ function BillEditor({
             </section>
 
             {error && (
-              <div className="rounded-xl bg-blue-50 p-3 text-sm leading-5 text-blue-800">
+              <div className="rounded-xl bg-red-50 p-3 text-sm leading-5 text-red-700">
                 {error}
               </div>
             )}
@@ -610,12 +994,12 @@ function BillEditor({
             <div className="sticky bottom-0 -mx-5 border-t border-slate-200 bg-white/95 px-5 py-4 backdrop-blur sm:static sm:m-0 sm:border-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
               <button
                 type="submit"
-                disabled={saving}
-                className="min-h-12 w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50"
-              >
+                disabled={!canSaveBill}
+                className="min-h-12 w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 active:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
+                >
                 {saving
-                  ? "Saving..."
-                  : "Save Bill"}
+                    ? "Saving..."
+                    : "Save Bill"}
               </button>
             </div>
           </form>

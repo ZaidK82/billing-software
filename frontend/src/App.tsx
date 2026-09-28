@@ -12,6 +12,7 @@ import BillHistory from "./components/billing/BillHistory";
 import CustomerList from "./components/customers/CustomerList";
 import CustomerForm from "./components/customers/CustomerForm";
 import AppNavbar from "./components/navigation/AppNavbar";
+import BusinessProfilePage from "./components/business/BusinessProfile";
 
 import {
   createBusiness,
@@ -80,9 +81,6 @@ function App() {
 
   const [authInitializing, setAuthInitializing] =
     useState(true);
-
-  const [savingProfile, setSavingProfile] =
-    useState(false);
 
   const [screen, setScreen] = useState<
     | "dashboard"
@@ -521,67 +519,6 @@ function App() {
     }
   }
 
-  async function handleProfileSubmit(
-    event: FormEvent<HTMLFormElement>,
-  ) {
-    event.preventDefault();
-
-    if (!business) {
-      return;
-    }
-
-    setSavingProfile(true);
-    setError(null);
-    setMessage(null);
-
-    try {
-      const session = await getSession();
-
-      if (!session?.access_token) {
-        throw new Error(
-          "Your session has expired. Please log in again.",
-        );
-      }
-
-      const updated =
-        await updateBusinessProfile(
-          session.access_token,
-          {
-            name: business.name,
-            phone: business.phone,
-            email: business.email,
-            address: business.address,
-            city: business.city,
-            state: business.state,
-            pincode: business.pincode,
-          },
-        );
-
-      setBusiness(updated);
-
-      setCurrentUser((previous) =>
-        previous
-          ? {
-              ...previous,
-              business_name: updated.name,
-            }
-          : previous,
-      );
-
-      setMessage(
-        "Business profile saved successfully.",
-      );
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to save business profile.",
-      );
-    } finally {
-      setSavingProfile(false);
-    }
-  }
-
   if (authInitializing) {
     return (
       <main className="min-h-screen bg-slate-50 px-4 py-8">
@@ -790,6 +727,7 @@ function App() {
       <>
       {navigation}
         <BillEditor
+          business={business}
           onCancel={() => {
             setScreen("dashboard");
           }}
@@ -805,282 +743,90 @@ function App() {
 
     return (
       <>
-      {navigation}
-      <main className="min-h-screen bg-slate-50 px-4 py-6 sm:px-6 lg:px-8">
-        <div className="mx-auto w-full max-w-2xl">
-          <section className="rounded-2xl bg-white p-5 shadow-sm sm:p-6 lg:p-8">
-            <div className="mb-6">
-              <div className="flex items-center justify-between">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setScreen("dashboard");
-                  }}
-                  className="min-h-10 rounded-lg px-1 text-sm font-medium text-blue-600 transition hover:bg-blue-50 active:bg-blue-100"
-                >
-                  ← Dashboard
-                </button>
-              </div>
+        {navigation}
 
-              <p className="mt-5 text-sm font-medium text-blue-600">
-                Billing Software
-              </p>
+        <BusinessProfilePage
+          business={business}
+          currentUserRole={currentUser.role}
+          saving={false}
+          loading={loading}
+          message={message}
+          error={error}
+          onBusinessChange={setBusiness}
+          onSubmit={async (event) => {
+            event.preventDefault();
 
-              <h1 className="mt-2 text-2xl font-bold text-slate-900">
-                Business Profile
-              </h1>
+            setError(null);
+            setMessage(null);
 
-              <p className="mt-2 text-sm leading-6 text-slate-600">
-                Enter the business details that will
-                appear on your invoices.
-              </p>
+            try {
+              const session = await getSession();
 
-              <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setScreen("history");
-                    void loadBills();
-                  }}
-                  className="min-h-11 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 active:bg-slate-100"
-                >
-                  Bills
-                </button>
+              if (!session?.access_token) {
+                throw new Error(
+                  "Your session has expired. Please log in again.",
+                );
+              }
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setScreen("bill");
-                  }}
-                  className="min-h-11 rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 active:bg-slate-950"
-                >
-                  Create Bill
-                </button>
+              const updated =
+                await updateBusinessProfile(
+                  session.access_token,
+                  {
+                    name: business.name,
+                    phone: business.phone,
+                    email: business.email,
+                    address: business.address,
+                    city: business.city,
+                    state: business.state,
+                    pincode: business.pincode,
+                    gstin: business.gstin,
+                    udyam_number: business.udyam_number,
+                    logo_path: business.logo_path,
+                    signature_path: business.signature_path,
+                    terms_and_conditions:
+                      business.terms_and_conditions,
+                    invoice_columns: business.invoice_columns,
+                  },
+                );
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setScreen("customers");
-                    void loadCustomers();
-                  }}
-                  className="min-h-11 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 active:bg-slate-100"
-                >
-                  Customers
-                </button>
-              </div>
-            </div>
+              setBusiness(updated);
 
-            <form
-              onSubmit={handleProfileSubmit}
-              className="space-y-4"
-            >
-              <div>
-                <label
-                  htmlFor="business-name"
-                  className="mb-1 block text-sm font-medium text-slate-700"
-                >
-                  Business Name *
-                </label>
-
-                <input
-                  id="business-name"
-                  type="text"
-                  required
-                  value={business.name}
-                  onChange={(event) =>
-                    setBusiness({
-                      ...business,
-                      name: event.target.value,
-                    })
-                  }
-                  className="w-full resize-none rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                  placeholder="My Business"
-                />
-              </div>
-
-              <div>
-                <label
-                  htmlFor="business-phone"
-                  className="mb-1 block text-sm font-medium text-slate-700"
-                >
-                  Phone
-                </label>
-
-                <input
-                  id="business-phone"
-                  type="tel"
-                  value={business.phone ?? ""}
-                  onChange={(event) =>
-                    setBusiness({
-                      ...business,
-                      phone: event.target.value,
-                    })
-                  }
-                  className="w-full resize-none rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                  placeholder="9876543210"
-                />
-              </div>
-
-              <div>
-                <label
-                  htmlFor="business-email"
-                  className="mb-1 block text-sm font-medium text-slate-700"
-                >
-                  Email
-                </label>
-
-                <input
-                  id="business-email"
-                  type="email"
-                  value={business.email ?? ""}
-                  onChange={(event) =>
-                    setBusiness({
-                      ...business,
-                      email: event.target.value,
-                    })
-                  }
-                  className="w-full resize-none rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                  placeholder="business@example.com"
-                />
-              </div>
-
-              <div>
-                <label
-                  htmlFor="business-address"
-                  className="mb-1 block text-sm font-medium text-slate-700"
-                >
-                  Address
-                </label>
-
-                <textarea
-                  id="business-address"
-                  rows={3}
-                  value={business.address ?? ""}
-                  onChange={(event) =>
-                    setBusiness({
-                      ...business,
-                      address: event.target.value,
-                    })
-                  }
-                  className="w-full resize-none rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500"
-                  placeholder="Shop / office address"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label
-                    htmlFor="business-city"
-                    className="mb-1 block text-sm font-medium text-slate-700"
-                  >
-                    City
-                  </label>
-
-                  <input
-                    id="business-city"
-                    type="text"
-                    value={business.city ?? ""}
-                    onChange={(event) =>
-                      setBusiness({
-                        ...business,
-                        city: event.target.value,
-                      })
+              setCurrentUser((previous) =>
+                previous
+                  ? {
+                      ...previous,
+                      business_name: updated.name,
                     }
-                    className="w-full resize-none rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                    placeholder="Mumbai"
-                  />
-                </div>
+                  : previous,
+              );
 
-                <div>
-                  <label
-                    htmlFor="business-state"
-                    className="mb-1 block text-sm font-medium text-slate-700"
-                  >
-                    State
-                  </label>
-
-                  <input
-                    id="business-state"
-                    type="text"
-                    value={business.state ?? ""}
-                    onChange={(event) =>
-                      setBusiness({
-                        ...business,
-                        state: event.target.value,
-                      })
-                    }
-                  className="w-full resize-none rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                    placeholder="Maharashtra"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label
-                  htmlFor="business-pincode"
-                  className="mb-1 block text-sm font-medium text-slate-700"
-                >
-                  Pincode
-                </label>
-
-                <input
-                  id="business-pincode"
-                  type="text"
-                  inputMode="numeric"
-                  value={business.pincode ?? ""}
-                  onChange={(event) =>
-                    setBusiness({
-                      ...business,
-                      pincode: event.target.value,
-                    })
-                  }
-                  className="w-full resize-none rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                  placeholder="400001"
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={savingProfile}
-                className="min-h-11 w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 active:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {savingProfile
-                  ? "Saving..."
-                  : "Save Business Profile"}
-              </button>
-            </form>
-
-            {message && (
-              <div className="mt-4 rounded-xl bg-green-50 p-3 text-sm text-green-800">
-                {message}
-              </div>
-            )}
-
-            {error && (
-              <div className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-700">
-                {error}
-              </div>
-            )}
-
-            <div className="mt-6 border-t border-slate-200 pt-4">
-              <div className="mb-4 text-xs text-slate-500">
-                Signed in as {currentUser.role}
-              </div>
-
-              <button
-                type="button"
-                onClick={handleLogout}
-                disabled={loading}
-                className="min-h-11 w-full rounded-xl border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 active:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {loading
-                  ? "Logging out..."
-                  : "Log out"}
-              </button>
-            </div>
-          </section>
-        </div>
-      </main>
+              setMessage(
+                "Business profile saved successfully.",
+              );
+            } catch (err) {
+              setError(
+                err instanceof Error
+                  ? err.message
+                  : "Unable to save business profile.",
+              );
+            }
+          }}
+          onBack={() => {
+            setScreen("dashboard");
+          }}
+          onBills={() => {
+            setScreen("history");
+            void loadBills();
+          }}
+          onCreateBill={() => {
+            setScreen("bill");
+          }}
+          onCustomers={() => {
+            setScreen("customers");
+            void loadCustomers();
+          }}
+          onLogout={handleLogout}
+        />
       </>
     );
   }

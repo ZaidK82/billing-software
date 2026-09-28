@@ -2,6 +2,7 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import DateTime, String, Text, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -50,6 +51,37 @@ class Business(Base):
     pincode: Mapped[str | None] = mapped_column(
         String(20),
         nullable=True,
+    )
+
+    gstin: Mapped[str | None] = mapped_column(
+        String(30),
+        nullable=True,
+    )
+
+    udyam_number: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+    )
+    logo_path: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+    )
+
+    signature_path: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+    )
+
+    terms_and_conditions: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    invoice_columns: Mapped[list[dict]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list,
+        server_default="[]",
     )
 
     created_at: Mapped[datetime] = mapped_column(

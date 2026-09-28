@@ -49,6 +49,15 @@ export async function createBusiness(accessToken: string) {
   return response.json();
 }
 
+export type InvoiceColumn = {
+  key: string;
+  label: string;
+  type: string;
+  source: string;
+  position: number;
+  required: boolean;
+};
+
 export type BusinessProfile = {
   id: string;
   name: string;
@@ -58,6 +67,12 @@ export type BusinessProfile = {
   city: string | null;
   state: string | null;
   pincode: string | null;
+  gstin: string | null;
+  udyam_number: string | null;
+  logo_path: string | null;
+  signature_path: string | null;
+  terms_and_conditions: string | null;
+  invoice_columns: InvoiceColumn[];
 };
 
 export async function getBusinessProfile(
@@ -106,16 +121,80 @@ export async function updateBusinessProfile(
   return response.json();
 }
 
+export async function uploadBusinessAsset(
+  accessToken: string,
+  assetType: "logo" | "signature",
+  file: File,
+): Promise<{
+  asset_type: "logo" | "signature";
+  path: string;
+}> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await fetch(
+    `${API_URL}/business/${assetType}`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: formData,
+    },
+  );
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+
+    throw new Error(
+      body?.detail ||
+        `Business ${assetType} upload failed: ${response.status}`,
+    );
+  }
+
+  return response.json();
+}
+
+export async function getBusinessAssetUrl(
+  accessToken: string,
+  assetType: "logo" | "signature",
+): Promise<{
+  asset_type: "logo" | "signature";
+  url: string;
+}> {
+  const response = await fetch(
+    `${API_URL}/business/${assetType}/url`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+
+    throw new Error(
+      body?.detail ||
+        `Business ${assetType} URL request failed: ${response.status}`,
+    );
+  }
+
+  return response.json();
+}
+
 export type CreateBillItem = {
   item_name: string;
   quantity: number;
   unit_price: number;
+  custom_values: Record<string, unknown>;
 };
 
 export type CreateBillRequest = {
   customer_name: string;
   customer_phone: string | null;
   customer_address: string | null;
+  invoice_columns?: InvoiceColumn[];
   items: CreateBillItem[];
 };
 
@@ -125,6 +204,7 @@ export type SavedBillItem = {
   quantity: number;
   unit_price: string;
   line_total: string;
+  custom_values: Record<string, unknown>;
 };
 
 export type SavedBill = {
@@ -136,6 +216,8 @@ export type SavedBill = {
   subtotal: string;
   total: string;
   created_at: string;
+  invoice_columns: InvoiceColumn[];
+  terms_and_conditions: string | null;
   items: SavedBillItem[];
 };
 

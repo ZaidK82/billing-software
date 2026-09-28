@@ -12,20 +12,22 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
+from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import (
+    Image,
     Paragraph,
     SimpleDocTemplate,
     Spacer,
     Table,
     TableStyle,
 )
-
 # Import your existing SQLAlchemy models.
 # Adjust this import ONLY if your project's model module has a different path.
 from app.models.bill import Bill, BillItem
 from app.models.business import Business
+from app.services.storage import download_business_asset
 
 
 # ---------------------------------------------------------------------------
@@ -183,6 +185,250 @@ def _paragraph(
     """Small helper to create ReportLab Paragraph objects."""
     return Paragraph(text, style)
 
+def _business_asset_image(
+    storage_path: str | None,
+    *,
+    max_width: float,
+    max_height: float,
+) -> Image | None:
+    """
+    Download a private business asset and create a ReportLab Image
+    that fits within the supplied maximum dimensions.
+    """
+    if not storage_path:
+        return None
+
+    try:
+        image_bytes = download_business_asset(
+            storage_path=storage_path,
+        )
+
+        image_reader = ImageReader(
+            BytesIO(image_bytes)
+        )
+
+        image_width, image_height = (
+            image_reader.getSize()
+        )
+
+        if image_width <= 0 or image_height <= 0:
+            return None
+
+        scale = min(
+            max_width / image_width,
+            max_height / image_height,
+        )
+
+        width = image_width * scale
+        height = image_height * scale
+
+        image = Image(
+            BytesIO(image_bytes),
+            width=width,
+            height=height,
+        )
+
+        image.hAlign = "LEFT"
+
+        return image
+
+    except Exception:
+        # Invoice generation should still work if an optional
+        # business image cannot be loaded.
+        return None
+
+def _number_to_words_under_1000(number: int) -> str:
+    """Convert an integer from 0 to 999 into English words."""
+    ones = [
+        "Zero",
+        "One",
+        "Two",
+        "Three",
+        "Four",
+        "Five",
+        "Six",
+        "Seven",
+        "Eight",
+        "Nine",
+        "Ten",
+        "Eleven",
+        "Twelve",
+        "Thirteen",
+        "Fourteen",
+        "Fifteen",
+        "Sixteen",
+        "Seventeen",
+        "Eighteen",
+        "Nineteen",
+    ]
+
+    tens = [
+        "",
+        "",
+        "Twenty",
+        "Thirty",
+        "Forty",
+        "Fifty",
+        "Sixty",
+        "Seventy",
+        "Eighty",
+        "Ninety",
+    ]
+
+    if number < 20:
+        return ones[number]
+
+    if number < 100:
+        remainder = number % 10
+
+        if remainder == 0:
+            return tens[number // 10]
+
+        return f"{tens[number // 10]} {ones[remainder]}"
+
+    remainder = number % 100
+
+    if remainder == 0:
+        return f"{ones[number // 100]} Hundred"
+
+    return (
+        f"{ones[number // 100]} Hundred "
+        f"{_number_to_words_under_1000(remainder)}"
+    )
+
+def _number_to_words(number: int) -> str:
+    """Convert an integer into English words using Indian numbering."""
+    if number == 0:
+        return "Zero"
+
+    parts: list[str] = []
+
+    crore = number // 10_000_000
+    number %= 10_000_000
+
+    lakh = number // 100_000
+    number %= 100_000
+
+    thousand = number // 1_000
+    number %= 1_000
+
+    if crore:
+        parts.append(
+            f"{_number_to_words_under_1000(crore)} Crore"
+        )
+
+    if lakh:
+        parts.append(
+            f"{_number_to_words_under_1000(lakh)} Lakh"
+        )
+
+    if thousand:
+        parts.append(
+            f"{_number_to_words_under_1000(thousand)} Thousand"
+        )
+
+    if number:
+        parts.append(
+            _number_to_words_under_1000(number)
+        )
+
+    return " ".join(parts)
+
+
+def _amount_in_words(value: Any) -> str:
+    """
+    Convert a monetary amount into invoice-friendly English words.
+
+    Examples:
+        2392.00 -> Two Thousand Three Hundred And Ninety Two Only
+        2392.50 -> Two Thousand Three Hundred And Ninety Two Rupees And Fifty Paise Only
+    """
+    amount = _decimal(value).quantize(Decimal("0.01"))
+    amount = abs(amount)
+
+    rupees = int(amount)
+    paise = int(
+        (amount - Decimal(rupees)) * 100
+    )
+
+    words = _number_to_words(rupees)
+
+    if paise:
+        return (
+            f"{words} Rupees And "
+            f"{_number_to_words_under_1000(paise)} Paise Only"
+        )
+
+    return f"{words} Only"
+
+def _get_invoice_columns(
+    bill: Bill,
+) -> list[dict[str, Any]]:
+    """
+    Return the column configuration stored on the bill.
+
+    The bill stores a snapshot of the invoice columns used when
+    the invoice was created, so historical PDFs remain unchanged
+    when the business later changes its default columns.
+    """
+    columns = getattr(bill, "invoice_columns", None) or []
+
+    return sorted(
+        columns,
+        key=lambda column: int(
+            column.get("position", 0)
+        ),
+    )
+
+
+def _get_item_column_value(
+    item: BillItem,
+    column: dict[str, Any],
+) -> str:
+    """
+    Resolve a configured invoice column to the value stored
+    on a bill item.
+    """
+    source = column.get("source")
+    key = column.get("key")
+
+    if source == "core":
+        if key == "item_name":
+            return _clean_text(item.item_name) or "Item"
+
+        if key == "quantity":
+            return _safe_text(
+                item.quantity
+                if item.quantity is not None
+                else 0
+            )
+
+        if key == "unit_price":
+            return _format_money(item.unit_price)
+
+        if key == "line_total":
+            return _format_money(item.line_total)
+
+        return ""
+
+    custom_values = (
+        getattr(item, "custom_values", None) or {}
+    )
+
+    value = custom_values.get(key)
+
+    if value is None or str(value).strip() == "":
+        return "—"
+
+    column_type = column.get("type")
+
+    if column_type == "number":
+        try:
+            return f"{Decimal(str(value)):.2f}"
+        except (InvalidOperation, ValueError, TypeError):
+            return _safe_text(value)
+
+    return _clean_text(value)
 
 # ---------------------------------------------------------------------------
 # PDF builder
@@ -388,9 +634,70 @@ def build_invoice_pdf(
         alignment=TA_CENTER,
     )
 
+    amount_words_label_style = ParagraphStyle(
+        "InvoiceAmountWordsLabel",
+        parent=styles["Normal"],
+        fontName=BOLD_FONT_NAME,
+        fontSize=8,
+        leading=11,
+        textColor=colors.HexColor("#374151"),
+        alignment=TA_LEFT,
+    )
+
+    amount_words_style = ParagraphStyle(
+        "InvoiceAmountWords",
+        parent=styles["Normal"],
+        fontName=REGULAR_FONT_NAME,
+        fontSize=9,
+        leading=13,
+        textColor=colors.HexColor("#111827"),
+        alignment=TA_LEFT,
+    )
+
+    terms_title_style = ParagraphStyle(
+        "InvoiceTermsTitle",
+        parent=styles["Normal"],
+        fontName=BOLD_FONT_NAME,
+        fontSize=8,
+        leading=11,
+        textColor=colors.HexColor("#374151"),
+        alignment=TA_LEFT,
+    )
+
+    terms_style = ParagraphStyle(
+        "InvoiceTerms",
+        parent=styles["Normal"],
+        fontName=REGULAR_FONT_NAME,
+        fontSize=8.5,
+        leading=12,
+        textColor=colors.HexColor("#374151"),
+        alignment=TA_LEFT,
+    )
+
+    signatory_style = ParagraphStyle(
+        "InvoiceSignatory",
+        parent=styles["Normal"],
+        fontName=BOLD_FONT_NAME,
+        fontSize=8,
+        leading=10,
+        textColor=colors.HexColor("#374151"),
+        alignment=TA_CENTER,
+    )
+
     # -----------------------------------------------------------------------
     # Business information
     # -----------------------------------------------------------------------
+
+    business_logo = _business_asset_image(
+        getattr(business, "logo_path", None),
+        max_width=45 * mm,
+        max_height=25 * mm,
+    )
+    business_signature = _business_asset_image(
+        getattr(business, "signature_path", None),
+        max_width=45 * mm,
+        max_height=25 * mm,
+    )
 
     business_name = _clean_text(business.name) or "Business"
 
@@ -433,12 +740,20 @@ def build_invoice_pdf(
     else:
         business_details = ""
 
-    business_block: list[Paragraph] = [
+    business_block: list[Any] = []
+
+    if business_logo:
+        business_block.append(business_logo)
+        business_block.append(
+            Spacer(1, 2 * mm)
+        )
+
+    business_block.append(
         _paragraph(
             business_name,
             business_name_style,
         )
-    ]
+    )
 
     if business_details:
         business_block.append(
@@ -613,53 +928,194 @@ def build_invoice_pdf(
     # Items table
     # -----------------------------------------------------------------------
 
-    item_rows: list[list[Any]] = [
-        [
-            _paragraph("ITEM", table_header_style),
-            _paragraph("QTY", table_header_right_style),
-            _paragraph("UNIT PRICE", table_header_right_style),
-            _paragraph("TOTAL", table_header_right_style),
-        ]
-    ]
+    invoice_columns = _get_invoice_columns(bill)
 
     bill_items = list(bill.items or [])
 
-    for item in bill_items:
-        item_name = _clean_text(item.item_name) or "Item"
+    if not invoice_columns:
+        invoice_columns = [
+            {
+                "key": "item_name",
+                "label": "Item",
+                "type": "text",
+                "source": "core",
+                "position": 1,
+                "required": True,
+            },
+            {
+                "key": "quantity",
+                "label": "Qty",
+                "type": "number",
+                "source": "core",
+                "position": 2,
+                "required": True,
+            },
+            {
+                "key": "unit_price",
+                "label": "Unit Price",
+                "type": "number",
+                "source": "core",
+                "position": 3,
+                "required": True,
+            },
+            {
+                "key": "line_total",
+                "label": "Total",
+                "type": "number",
+                "source": "core",
+                "position": 4,
+                "required": True,
+            },
+        ]
+    item_rows: list[list[Any]] = []
 
-        quantity = item.quantity if item.quantity is not None else 0
+    header_row: list[Any] = []
 
-        unit_price = _format_money(item.unit_price)
-        line_total = _format_money(item.line_total)
-
-        item_rows.append(
-            [
-                _paragraph(item_name, item_style),
-                _paragraph(
-                    _safe_text(quantity),
-                    item_right_style,
-                ),
-                _paragraph(
-                    unit_price,
-                    item_right_style,
-                ),
-                _paragraph(
-                    line_total,
-                    item_right_style,
-                ),
-            ]
+    for column in invoice_columns:
+        label = _clean_text(
+            column.get("label") or column.get("key") or ""
         )
 
-    # Keep enough width for wrapped item names while preserving right-aligned
-    # numeric columns.
+        is_numeric = (
+            column.get("type") == "number"
+            or (
+                column.get("source") == "core"
+                and column.get("key")
+                in {
+                    "quantity",
+                    "unit_price",
+                    "line_total",
+                }
+            )
+        )
+
+        header_row.append(
+            _paragraph(
+                label.upper(),
+                (
+                    table_header_right_style
+                    if is_numeric
+                    else table_header_style
+                ),
+            )
+        )
+
+    item_rows.append(header_row)
+
+    for item in bill_items:
+        row: list[Any] = []
+
+        for column in invoice_columns:
+            value = _get_item_column_value(
+                item,
+                column,
+            )
+
+            is_numeric = (
+                column.get("type") == "number"
+                or (
+                    column.get("source") == "core"
+                    and column.get("key")
+                    in {
+                        "quantity",
+                        "unit_price",
+                        "line_total",
+                    }
+                )
+            )
+
+            row.append(
+                _paragraph(
+                    value,
+                    (
+                        item_right_style
+                        if is_numeric
+                        else item_style
+                    ),
+                )
+            )
+
+        item_rows.append(row)
+
+    # -----------------------------------------------------------------------
+    # Dynamic column widths
+    # -----------------------------------------------------------------------
+
+    column_count = len(invoice_columns)
+
+    # Available content width:
+    # A4 = 210 mm
+    # left + right margins = 32 mm
+    content_width = 178 * mm
+
+    # Give text columns more room than numeric columns.
+    numeric_columns = sum(
+        1
+        for column in invoice_columns
+        if (
+            column.get("type") == "number"
+            or (
+                column.get("source") == "core"
+                and column.get("key")
+                in {
+                    "quantity",
+                    "unit_price",
+                    "line_total",
+                }
+            )
+        )
+    )
+
+    text_columns = max(
+        column_count - numeric_columns,
+        0,
+    )
+
+    if text_columns and numeric_columns:
+        numeric_width = min(
+            28 * mm,
+            content_width * 0.20,
+        )
+
+        remaining_width = (
+            content_width
+            - numeric_width * numeric_columns
+        )
+
+        text_width = (
+            remaining_width / text_columns
+        )
+
+        column_widths = []
+
+        for column in invoice_columns:
+            is_numeric = (
+                column.get("type") == "number"
+                or (
+                    column.get("source") == "core"
+                    and column.get("key")
+                    in {
+                        "quantity",
+                        "unit_price",
+                        "line_total",
+                    }
+                )
+            )
+
+            column_widths.append(
+                numeric_width
+                if is_numeric
+                else text_width
+            )
+    else:
+        column_widths = [
+            content_width / column_count
+            for _ in invoice_columns
+        ]
+
     items_table = Table(
         item_rows,
-        colWidths=[
-            82 * mm,
-            20 * mm,
-            34 * mm,
-            36 * mm,
-        ],
+        colWidths=column_widths,
         repeatRows=1,
         hAlign="LEFT",
     )
@@ -690,13 +1146,13 @@ def build_invoice_pdf(
                     "LEFTPADDING",
                     (0, 0),
                     (-1, -1),
-                    7,
+                    6,
                 ),
                 (
                     "RIGHTPADDING",
                     (0, 0),
                     (-1, -1),
-                    7,
+                    6,
                 ),
                 (
                     "TOPPADDING",
@@ -743,13 +1199,113 @@ def build_invoice_pdf(
             ]
         )
     )
-
     # -----------------------------------------------------------------------
     # Totals
     # -----------------------------------------------------------------------
 
     subtotal = _format_money(bill.subtotal)
     total = _format_money(bill.total)
+
+    amount_in_words = _amount_in_words(bill.total)
+
+    amount_words_table = Table(
+        [
+            [
+                _paragraph(
+                    "Amount in Words:",
+                    amount_words_label_style,
+                ),
+                _paragraph(
+                    amount_in_words,
+                    amount_words_style,
+                ),
+            ]
+        ],
+        colWidths=[
+            30 * mm,
+            148 * mm,
+        ],
+        hAlign="LEFT",
+    )
+
+    terms_block = None
+
+    terms_and_conditions = getattr(
+        bill,
+        "terms_and_conditions",
+        None,
+    )
+
+    if terms_and_conditions and terms_and_conditions.strip():
+        terms_block = Table(
+            [
+                [
+                    _paragraph(
+                        "Terms & Conditions",
+                        terms_title_style,
+                    )
+                ],
+                [
+                    _paragraph(
+                        _clean_text(
+                            terms_and_conditions
+                        ).replace("\n", "<br/>"),
+                        terms_style,
+                    )
+                ],
+            ],
+            colWidths=[178 * mm],
+            hAlign="LEFT",
+        )
+
+        terms_block.setStyle(
+            TableStyle(
+                [
+                    (
+                        "VALIGN",
+                        (0, 0),
+                        (-1, -1),
+                        "TOP",
+                    ),
+                    (
+                        "LEFTPADDING",
+                        (0, 0),
+                        (-1, -1),
+                        0,
+                    ),
+                    (
+                        "RIGHTPADDING",
+                        (0, 0),
+                        (-1, -1),
+                        0,
+                    ),
+                    (
+                        "TOPPADDING",
+                        (0, 0),
+                        (-1, -1),
+                        0,
+                    ),
+                    (
+                        "BOTTOMPADDING",
+                        (0, 0),
+                        (-1, -1),
+                        0,
+                    ),
+                ]
+            )
+        )
+
+    amount_words_table.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 2),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+            ]
+        )
+    )
 
     totals_table = Table(
         [
@@ -793,6 +1349,67 @@ def build_invoice_pdf(
             ]
         )
     )
+
+    signature_block = None
+
+    if business_signature:
+        signature_content: list[Any] = [
+            business_signature,
+            Spacer(1, 1.5 * mm),
+            _paragraph(
+                "Authorized Signatory",
+                signatory_style,
+            ),
+        ]
+
+        signature_block = Table(
+            [[signature_content]],
+            colWidths=[55 * mm],
+            hAlign="RIGHT",
+        )
+
+        signature_block.setStyle(
+            TableStyle(
+                [
+                    (
+                        "VALIGN",
+                        (0, 0),
+                        (-1, -1),
+                        "MIDDLE",
+                    ),
+                    (
+                        "ALIGN",
+                        (0, 0),
+                        (-1, -1),
+                        "CENTER",
+                    ),
+                    (
+                        "LEFTPADDING",
+                        (0, 0),
+                        (-1, -1),
+                        0,
+                    ),
+                    (
+                        "RIGHTPADDING",
+                        (0, 0),
+                        (-1, -1),
+                        0,
+                    ),
+                    (
+                        "TOPPADDING",
+                        (0, 0),
+                        (-1, -1),
+                        0,
+                    ),
+                    (
+                        "BOTTOMPADDING",
+                        (0, 0),
+                        (-1, -1),
+                        0,
+                    ),
+                ]
+            )
+        )
 
     # -----------------------------------------------------------------------
     # Footer
@@ -846,10 +1463,20 @@ def build_invoice_pdf(
     story.append(Spacer(1, 5 * mm))
 
     story.append(totals_table)
-    story.append(Spacer(1, 9 * mm))
+    story.append(Spacer(1, 4 * mm))
+
+    story.append(amount_words_table)
+    story.append(Spacer(1, 7 * mm))
+
+    if terms_block:
+        story.append(terms_block)
+        story.append(Spacer(1, 7 * mm))
+
+    if signature_block:
+        story.append(signature_block)
+        story.append(Spacer(1, 5 * mm))
 
     story.append(footer)
-
     # -----------------------------------------------------------------------
     # Generate PDF
     # -----------------------------------------------------------------------

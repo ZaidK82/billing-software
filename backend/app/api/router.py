@@ -1,7 +1,15 @@
 from decimal import Decimal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status , Response
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    HTTPException,
+    Response,
+    UploadFile,
+    status,
+)
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -10,6 +18,10 @@ from app.api.dependencies import get_current_user_id
 from app.core.config import settings
 from app.core.database import engine, get_db
 from app.services.invoice_pdf import build_invoice_pdf
+from app.services.storage import (
+    create_business_asset_signed_url,
+    upload_business_asset,
+)
 from app.models import (
     Bill,
     BillItem,
@@ -21,10 +33,16 @@ from app.models import (
 
 router = APIRouter()
 
+class InvoiceColumn(BaseModel):
+    key: str
+    label: str
+    type: str
+    source: str
+    position: int
+    required: bool = False
+
 
 class BusinessProfileResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
     id: UUID
     name: str
     phone: str | None
@@ -33,6 +51,12 @@ class BusinessProfileResponse(BaseModel):
     city: str | None
     state: str | None
     pincode: str | None
+    gstin: str | None
+    udyam_number: str | None
+    logo_path: str | None
+    signature_path: str | None
+    terms_and_conditions: str | None    
+    invoice_columns: list[InvoiceColumn]
 
 
 class BusinessProfileUpdate(BaseModel):
@@ -43,17 +67,24 @@ class BusinessProfileUpdate(BaseModel):
     city: str | None = None
     state: str | None = None
     pincode: str | None = None
+    gstin: str | None = None
+    udyam_number: str | None = None
+    logo_path: str | None = None
+    signature_path: str | None = None
+    terms_and_conditions: str | None = None
+    invoice_columns: list[InvoiceColumn] = []
 
 class BillItemCreate(BaseModel):
     item_name: str
     quantity: int
     unit_price: Decimal
-
+    custom_values: dict = {}
 
 class BillCreate(BaseModel):
     customer_name: str
     customer_phone: str | None = None
     customer_address: str | None = None
+    invoice_columns: list[InvoiceColumn] | None = None
     items: list[BillItemCreate]
 
 
@@ -65,6 +96,7 @@ class BillItemResponse(BaseModel):
     quantity: int
     unit_price: Decimal
     line_total: Decimal
+    custom_values: dict
 
 
 class BillResponse(BaseModel):
@@ -78,6 +110,8 @@ class BillResponse(BaseModel):
     subtotal: Decimal
     total: Decimal
     created_at: object
+    invoice_columns: list[InvoiceColumn]
+    terms_and_conditions: str | None
     items: list[BillItemResponse]
 
 class BillListItemResponse(BaseModel):
@@ -289,6 +323,41 @@ async def update_business(
         else None
     )
 
+    business.gstin = (
+        profile.gstin.strip()
+        if profile.gstin
+        else None
+    )
+
+    business.udyam_number = (
+        profile.udyam_number.strip()
+        if profile.udyam_number
+        else None
+    )
+
+    business.logo_path = (
+        profile.logo_path.strip()
+        if profile.logo_path
+        else None
+    )
+
+    business.signature_path = (
+        profile.signature_path.strip()
+        if profile.signature_path
+        else None
+    )
+    
+    business.terms_and_conditions = (
+        profile.terms_and_conditions.strip()
+        if profile.terms_and_conditions
+        else None
+    )
+
+    business.invoice_columns = [
+        column.model_dump()
+        for column in profile.invoice_columns
+    ]
+
     if not business.name:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -299,6 +368,67 @@ async def update_business(
     db.refresh(business)
 
     return business
+
+@router.post("/business/{asset_type}")
+async def upload_business_asset_endpoint(
+    asset_type: str,
+    file: UploadFile = File(...),
+    user_id: UUID = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    business = get_user_business(user_id, db)
+
+    storage_path = await upload_business_asset(
+        business_id=business.id,
+        asset_type=asset_type,
+        file=file,
+    )
+
+    if asset_type == "logo":
+        business.logo_path = storage_path
+    else:
+        business.signature_path = storage_path
+
+    db.commit()
+    db.refresh(business)
+
+    return {
+        "asset_type": asset_type,
+        "path": storage_path,
+    }
+
+@router.get("/business/{asset_type}/url")
+def get_business_asset_url(
+    asset_type: str,
+    user_id: UUID = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    business = get_user_business(user_id, db)
+
+    if asset_type == "logo":
+        storage_path = business.logo_path
+    elif asset_type == "signature":
+        storage_path = business.signature_path
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid business asset type.",
+        )
+
+    if not storage_path:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No {asset_type} has been uploaded.",
+        )
+
+    signed_url = create_business_asset_signed_url(
+        storage_path=storage_path,
+    )
+
+    return {
+        "asset_type": asset_type,
+        "url": signed_url,
+    }
 
 @router.post(
     "/bills",
@@ -311,6 +441,15 @@ async def create_bill(
     db: Session = Depends(get_db),
 ):
     business = get_user_business(user_id, db)
+
+    invoice_columns = (
+        bill_data.invoice_columns
+        if bill_data.invoice_columns is not None
+        else [
+            InvoiceColumn(**column)
+            for column in business.invoice_columns
+        ]
+    )
 
     customer_name = bill_data.customer_name.strip()
 
@@ -360,6 +499,7 @@ async def create_bill(
                 "quantity": item.quantity,
                 "unit_price": item.unit_price,
                 "line_total": line_total,
+                "custom_values": item.custom_values,
             }
         )
 
@@ -411,6 +551,11 @@ async def create_bill(
         ),
         subtotal=subtotal,
         total=total,
+        invoice_columns=[
+            column.model_dump()
+            for column in invoice_columns
+        ],
+        terms_and_conditions=business.terms_and_conditions,
     )
 
     db.add(bill)
@@ -423,6 +568,7 @@ async def create_bill(
             quantity=item_data["quantity"],
             unit_price=item_data["unit_price"],
             line_total=item_data["line_total"],
+            custom_values=item_data["custom_values"],
         )
 
         db.add(bill_item)

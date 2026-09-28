@@ -12,7 +12,10 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
+from sqlalchemy.dialects.postgresql import (
+    JSONB,
+    UUID as PostgreSQLUUID,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -73,6 +76,18 @@ class Bill(Base):
         default=Decimal("0.00"),
     )
 
+    invoice_columns: Mapped[list[dict]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list,
+        server_default="[]",
+    )
+
+    terms_and_conditions: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -118,6 +133,13 @@ class BillItem(Base):
     line_total: Mapped[Decimal] = mapped_column(
         Numeric(12, 2),
         nullable=False,
+    )
+
+    custom_values: Mapped[dict] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=dict,
+        server_default="{}",
     )
 
     bill: Mapped["Bill"] = relationship(
