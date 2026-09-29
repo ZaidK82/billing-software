@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useRef,
   useState,
 } from "react";
 
@@ -27,6 +28,7 @@ import {
   createCustomer,
   getBill,
   getBills,
+  getBusinessAssetUrl,
   getBusinessProfile,
   getCurrentUser,
   getCustomers,
@@ -78,6 +80,18 @@ function App() {
   const [business, setBusiness] =
     useState<BusinessProfile | null>(null);
 
+  const ASSET_CACHE_MAX_AGE =
+    55 * 60 * 1000;
+
+  const [logoUrl, setLogoUrl] =
+    useState<string | null>(null);
+
+  const [signatureUrl, setSignatureUrl] =
+    useState<string | null>(null);
+
+  const [assetsLoadedAt, setAssetsLoadedAt] =
+    useState<number | null>(null);
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
@@ -95,11 +109,13 @@ function App() {
   const [authInitializing, setAuthInitializing] =
     useState(true);
 
+  const initializationStarted = useRef(false);
+
   const [savedBill, setSavedBill] =
     useState<SavedBill | null>(null);
   
   const [isBillLoading, setIsBillLoading] =
-    useState(false);
+    useState(true);
 
   const [bills, setBills] =
     useState<BillListItem[]>([]);
@@ -139,6 +155,12 @@ function App() {
 
   useEffect(() => {
     async function initialize() {
+      if (initializationStarted.current) {
+        return;
+      }
+
+      initializationStarted.current = true;
+
       try {
         const healthData = await getHealth();
         setHealth(healthData);
@@ -193,58 +215,20 @@ function App() {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        if (!session?.access_token) {
+      (event) => {
+        if (event === "SIGNED_OUT") {
           setCurrentUser(null);
           setBusiness(null);
+          setSavedBill(null);
+          setEditingCustomer(null);
+          setLogoUrl(null);
+          setSignatureUrl(null);
+          setAssetsLoadedAt(null);
           navigate("/");
-          setAuthInitializing(false);
-          return;
-        }
-
-        try {
-          const user = await getCurrentUser(
-            session.access_token,
-          );
-
-          const businessData =
-            await createBusiness(
-              session.access_token,
-            );
-
-          setCurrentUser({
-            ...user,
-            business_id:
-              businessData.business_id,
-            business_name:
-              businessData.business_name,
-            role: businessData.role,
-            business_created:
-              businessData.created,
-          });
-
-          const profile =
-            await getBusinessProfile(
-              session.access_token,
-            );
-
-          setBusiness(profile);
-
-          if (_event === "SIGNED_IN") {
-            navigate("/dashboard");
-          }
-        } catch (err) {
-          setError(
-            err instanceof Error
-              ? err.message
-              : "Unable to verify authenticated user.",
-          );
-        } finally {
           setAuthInitializing(false);
         }
       },
-    );
-
+    );    
     return () => {
       subscription.unsubscribe();
     };
@@ -364,11 +348,14 @@ function App() {
     try {
       await logout();
 
-      setCurrentUser(null);
-      setBusiness(null);
-      setSavedBill(null);
-      setEditingCustomer(null);
-      navigate("/");
+    setCurrentUser(null);
+    setBusiness(null);
+    setSavedBill(null);
+    setEditingCustomer(null);
+    setLogoUrl(null);
+    setSignatureUrl(null);
+    setAssetsLoadedAt(null);
+    navigate("/");
 
       setMessage("Logged out successfully.");
     } catch (err) {
@@ -381,6 +368,74 @@ function App() {
       setLoading(false);
     }
   }
+
+  async function loadBusinessAssets(
+    forceRefresh = false,
+  ): Promise<{
+    logoUrl: string | null;
+    signatureUrl: string | null;
+  }> {
+    const now = Date.now();
+
+    const cacheIsFresh =
+      assetsLoadedAt !== null &&
+      now - assetsLoadedAt <
+        ASSET_CACHE_MAX_AGE;
+
+    if (!forceRefresh && cacheIsFresh) {
+      return {
+        logoUrl,
+        signatureUrl,
+      };
+    }
+
+    try {
+      const session = await getSession();
+
+      if (!session?.access_token) {
+        throw new Error(
+          "Your session has expired. Please log in again.",
+        );
+      }
+
+      const [logoResult, signatureResult] =
+        await Promise.all([
+          getBusinessAssetUrl(
+            session.access_token,
+            "logo",
+          ).catch(() => null),
+
+          getBusinessAssetUrl(
+            session.access_token,
+            "signature",
+          ).catch(() => null),
+        ]);
+
+      const nextLogoUrl =
+        logoResult?.url ?? null;
+
+      const nextSignatureUrl =
+        signatureResult?.url ?? null;
+
+      setLogoUrl(nextLogoUrl);
+      setSignatureUrl(nextSignatureUrl);
+      setAssetsLoadedAt(Date.now());
+
+      return {
+        logoUrl: nextLogoUrl,
+        signatureUrl: nextSignatureUrl,
+      };
+    } catch {
+      setLogoUrl(null);
+      setSignatureUrl(null);
+      setAssetsLoadedAt(null);
+
+      return {
+        logoUrl: null,
+        signatureUrl: null,
+      };
+    }
+  } 
 
   async function loadCustomers(
     forceRefresh = false,
@@ -624,35 +679,43 @@ function App() {
       return;
     }
 
-    async function loadBill() {
-      setIsBillLoading(true);
-      setBillsError(null);
+    setIsBillLoading(true);
 
-      try {
-        const session = await getSession();
+  async function loadBill() {
+    setIsBillLoading(true);
+    setBillsError(null);
 
-        if (!session?.access_token) {
-          throw new Error(
-            "Your session has expired. Please log in again.",
-          );
-        }
+    try {
+      const session = await getSession();
 
-        const bill = await getBill(
+      if (!session?.access_token) {
+        throw new Error(
+          "Your session has expired. Please log in again.",
+        );
+      }
+
+      const [bill, assets] = await Promise.all([
+        getBill(
           session.access_token,
           billId,
-        );
+        ),
+        loadBusinessAssets(),
+      ]);
 
-        setSavedBill(bill);
-      } catch (error) {
-        setBillsError(
-          error instanceof Error
-            ? error.message
-            : "Unable to load the bill.",
-        );
-      } finally {
-        setIsBillLoading(false);
-      }
+      setSavedBill(bill);
+
+      setLogoUrl(assets.logoUrl);
+      setSignatureUrl(assets.signatureUrl);
+    } catch (error) {
+      setBillsError(
+        error instanceof Error
+          ? error.message
+          : "Unable to load the bill.",
+      );
+    } finally {
+      setIsBillLoading(false);
     }
+  }
 
     loadBill();
   }, [
@@ -897,10 +960,18 @@ function App() {
                 bills={bills}
                 isLoading={isBillsLoading}
                 error={billsError}
+                onCreateBill={() => {
+                  navigate("/bills/new");
+                }}
+                onBack={() => {
+                  navigate("/dashboard");
+                }}
                 onRefresh={() => {
                   loadBills(true);
                 }}
                 onViewBill={async (billId) => {
+                  setIsBillLoading(true);
+
                   try {
                     const session = await getSession();
 
@@ -910,27 +981,32 @@ function App() {
                       );
                     }
 
-                    const bill = await getBill(
-                      session.access_token,
-                      billId,
-                    );
+                    const [bill, assets] = await Promise.all([
+                      getBill(
+                        session.access_token,
+                        billId,
+                      ),
+                      loadBusinessAssets(),
+                    ]);
 
                     setSavedBill(bill);
+
+                    setLogoUrl(assets.logoUrl);
+                    setSignatureUrl(assets.signatureUrl);
+
                     setBillsError(null);
+                    setIsBillLoading(false);
+
                     navigate(`/bills/${billId}`);
                   } catch (error) {
+                    setIsBillLoading(false);
+
                     setBillsError(
                       error instanceof Error
                         ? error.message
                         : "Unable to load the bill.",
                     );
                   }
-                }}
-                onCreateBill={() => {
-                  navigate("/bills/new");
-                }}
-                onBack={() => {
-                  navigate("/dashboard");
                 }}
               />
             }
@@ -966,6 +1042,7 @@ function App() {
                 setBillsLoadedAt(Date.now());
 
                 setSavedBill(bill);
+                setIsBillLoading(false);
                 setMessage(null);
                 navigate(`/bills/${bill.id}`);
               }}
@@ -976,7 +1053,7 @@ function App() {
           <Route
             path="/bills/:billId"
             element={
-              isBillLoading ? (
+              isBillLoading || !savedBill ? (
                 <main className="min-h-screen bg-slate-100 px-4 py-6">
                   <div className="mx-auto flex min-h-[60vh] max-w-4xl items-center justify-center">
                     <p className="text-sm font-medium text-slate-600">
@@ -984,10 +1061,12 @@ function App() {
                     </p>
                   </div>
                 </main>
-              ) : savedBill ? (
+              ) : (
                 <BillPreview
                   bill={savedBill}
                   businessName={business.name}
+                  logoUrl={logoUrl}
+                  signatureUrl={signatureUrl}
                   businessPhone={business.phone}
                   businessEmail={business.email}
                   businessAddress={business.address}
@@ -1009,11 +1088,6 @@ function App() {
                   onBackToBills={() => {
                     navigate("/bills");
                   }}
-                />
-              ) : (
-                <Navigate
-                  to="/bills"
-                  replace
                 />
               )
             }

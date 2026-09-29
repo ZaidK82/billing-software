@@ -1,7 +1,8 @@
-import { useState, useEffect} from "react";
+import { useState } from "react";
 
-import { downloadBillPdf , getBusinessAssetUrl } from "../../lib/api";
+import { downloadBillPdf } from "../../lib/api";
 import { getSession } from "../../lib/auth";
+
 import type {
   InvoiceColumn,
   SavedBill,
@@ -10,6 +11,8 @@ import type {
 type BillPreviewProps = {
   bill: SavedBill;
   businessName: string;
+  logoUrl: string | null;
+  signatureUrl: string | null;
   businessPhone: string | null;
   businessEmail: string | null;
   businessAddress: string | null;
@@ -26,6 +29,8 @@ type BillPreviewProps = {
 function BillPreview({
   bill,
   businessName,
+  logoUrl,
+  signatureUrl,
   businessPhone,
   businessEmail,
   businessAddress,
@@ -39,64 +44,13 @@ function BillPreview({
   onBackToBills,
 }: BillPreviewProps) {
   console.log("Bill preview terms:", bill.terms_and_conditions);
+
   const [isDownloading, setIsDownloading] =
     useState(false);
 
   const [downloadError, setDownloadError] =
     useState<string | null>(null);
   
-    const [logoUrl, setLogoUrl] = useState<string | null>(
-    null,
-  );
-
-  const [signatureUrl, setSignatureUrl] =
-    useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadBusinessAssets() {
-      try {
-        const session = await getSession();
-
-        if (!session?.access_token) {
-          return;
-        }
-
-        const [logoResult, signatureResult] =
-          await Promise.all([
-            getBusinessAssetUrl(
-              session.access_token,
-              "logo",
-            ).catch(() => null),
-
-            getBusinessAssetUrl(
-              session.access_token,
-              "signature",
-            ).catch(() => null),
-          ]);
-
-        if (cancelled) {
-          return;
-        }
-
-        setLogoUrl(logoResult?.url ?? null);
-        setSignatureUrl(signatureResult?.url ?? null);
-      } catch {
-        if (!cancelled) {
-          setLogoUrl(null);
-          setSignatureUrl(null);
-        }
-      }
-    }
-
-    void loadBusinessAssets();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   const businessLocation = [
     businessCity,
     businessState,
