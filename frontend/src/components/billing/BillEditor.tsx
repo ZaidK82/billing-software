@@ -1,17 +1,13 @@
 import {
-  useEffect,
   useMemo,
   useState,
 } from "react";
 
 import type { FormEvent } from "react";
 
-import {
-  getSession,
-} from "../../lib/auth";
+import { getSession } from "../../lib/auth";
 
 import {
-  getCustomers,
   saveBill,
 } from "../../lib/api";
 
@@ -32,6 +28,9 @@ type BillItem = {
 
 type BillEditorProps = {
   business: BusinessProfile;
+  customers: Customer[];
+  isLoadingCustomers: boolean;
+  customerLoadError: string | null;
   onCancel: () => void;
   onSaved: (bill: SavedBill) => void;
 };
@@ -89,43 +88,11 @@ function createItem(): BillItem {
   };
 }
 
-function getInputValue(
-  item: BillItem,
-  column: InvoiceColumn,
-): string | number {
-  if (column.source === "core") {
-    switch (column.key) {
-      case "item_name":
-        return item.item_name;
-
-      case "quantity":
-        return item.quantity;
-
-      case "unit_price":
-        return item.unit_price;
-
-      case "line_total":
-        return item.quantity * item.unit_price;
-
-      default:
-        return "";
-    }
-  }
-
-  const value = item.custom_values[column.key];
-
-  if (value === null || value === undefined) {
-    return "";
-  }
-
-  return typeof value === "string" ||
-    typeof value === "number"
-    ? value
-    : String(value);
-}
-
 function BillEditor({
   business,
+  customers,
+  isLoadingCustomers,
+  customerLoadError,
   onCancel,
   onSaved,
 }: BillEditorProps) {
@@ -145,17 +112,8 @@ function BillEditor({
   const [customerAddress, setCustomerAddress] =
     useState("");
 
-  const [customers, setCustomers] =
-    useState<Customer[]>([]);
-
   const [selectedCustomerId, setSelectedCustomerId] =
     useState("");
-
-  const [isLoadingCustomers, setIsLoadingCustomers] =
-    useState(true);
-
-  const [customerLoadError, setCustomerLoadError] =
-    useState<string | null>(null);
 
   const [items, setItems] = useState<BillItem[]>([]);
 
@@ -170,39 +128,6 @@ function BillEditor({
 
   const [saving, setSaving] =
     useState(false);
-
-  useEffect(() => {
-    async function loadCustomers() {
-      setIsLoadingCustomers(true);
-      setCustomerLoadError(null);
-
-      try {
-        const session = await getSession();
-
-        if (!session?.access_token) {
-          throw new Error(
-            "Your session has expired. Please log in again.",
-          );
-        }
-
-        const savedCustomers = await getCustomers(
-          session.access_token,
-        );
-
-        setCustomers(savedCustomers);
-      } catch (err) {
-        setCustomerLoadError(
-          err instanceof Error
-            ? err.message
-            : "Unable to load saved customers.",
-        );
-      } finally {
-        setIsLoadingCustomers(false);
-      }
-    }
-
-    loadCustomers();
-  }, []);
 
   const subtotal = useMemo(() => {
     return items.reduce(

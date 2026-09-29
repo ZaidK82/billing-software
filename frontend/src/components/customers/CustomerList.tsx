@@ -6,6 +6,7 @@ type CustomerListProps = {
   error: string | null;
   onAddCustomer: () => void;
   onEditCustomer: (customer: Customer) => void;
+  onRefresh: () => void;
   onBack: () => void;
 };
 
@@ -15,6 +16,7 @@ function CustomerList({
   error,
   onAddCustomer,
   onEditCustomer,
+  onRefresh,
   onBack,
 }: CustomerListProps) {
   return (
@@ -38,14 +40,25 @@ function CustomerList({
           </button>
         </div>
 
-        <div className="mb-5 sm:mb-6">
-          <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">
-            Customers
-          </h1>
+        <div className="mb-5 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">
+              Customers
+            </h1>
 
-          <p className="mt-1 text-sm text-slate-500 sm:text-base">
-            Manage your saved customers.
-          </p>
+            <p className="mt-1 text-sm text-slate-500 sm:text-base">
+              Manage your saved customers.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={isLoading}
+            className="min-h-10 self-start rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 active:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 sm:self-auto"
+          >
+            {isLoading ? "Refreshing..." : "↻ Refresh"}
+          </button>
         </div>
 
         {isLoading && (

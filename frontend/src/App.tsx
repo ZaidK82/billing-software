@@ -5,6 +5,14 @@ import {
 
 import type { FormEvent } from "react";
 
+import {
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
+
 import Dashboard from "./components/dashboard/Dashboard";
 import BillEditor from "./components/billing/BillEditor";
 import BillPreview from "./components/billing/BillPreview";
@@ -56,6 +64,11 @@ type CurrentUser = {
 };
 
 function App() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const DATA_CACHE_MAX_AGE = 5 * 60 * 1000;
+
   const [health, setHealth] =
     useState<ApiHealth | null>(null);
 
@@ -82,24 +95,23 @@ function App() {
   const [authInitializing, setAuthInitializing] =
     useState(true);
 
-  const [screen, setScreen] = useState<
-    | "dashboard"
-    | "profile"
-    | "bill"
-    | "history"
-    | "customers"
-    | "customer-form"
-    | "preview"
-  >("dashboard");
-
   const [savedBill, setSavedBill] =
     useState<SavedBill | null>(null);
+  
+  const [isBillLoading, setIsBillLoading] =
+    useState(false);
 
   const [bills, setBills] =
     useState<BillListItem[]>([]);
 
+  const [billsLoadedAt, setBillsLoadedAt] =
+    useState<number | null>(null);
+
   const [customers, setCustomers] =
     useState<Customer[]>([]);
+
+  const [customersLoadedAt, setCustomersLoadedAt] =
+    useState<number | null>(null);
 
   const [isCustomersLoading, setIsCustomersLoading] =
     useState(false);
@@ -109,6 +121,9 @@ function App() {
 
   const [editingCustomer, setEditingCustomer] =
     useState<Customer | null>(null);
+
+  const [isEditingCustomerLoading, setIsEditingCustomerLoading] =
+    useState(false);
 
   const [isCustomerSaving, setIsCustomerSaving] =
     useState(false);
@@ -162,7 +177,6 @@ function App() {
           );
 
         setBusiness(profile);
-        setScreen("dashboard");
       } catch (err) {
         setError(
           err instanceof Error
@@ -183,7 +197,7 @@ function App() {
         if (!session?.access_token) {
           setCurrentUser(null);
           setBusiness(null);
-          setScreen("dashboard");
+          navigate("/");
           setAuthInitializing(false);
           return;
         }
@@ -215,7 +229,10 @@ function App() {
             );
 
           setBusiness(profile);
-          setScreen("dashboard");
+
+          if (_event === "SIGNED_IN") {
+            navigate("/dashboard");
+          }
         } catch (err) {
           setError(
             err instanceof Error
@@ -276,7 +293,7 @@ function App() {
             );
 
           setBusiness(profile);
-          setScreen("dashboard");
+          navigate("/dashboard");
 
           setMessage(
             "Registration successful.",
@@ -324,7 +341,7 @@ function App() {
           );
 
         setBusiness(profile);
-        setScreen("dashboard");
+        navigate("/dashboard");
 
         setMessage("Login successful.");
       }
@@ -351,7 +368,7 @@ function App() {
       setBusiness(null);
       setSavedBill(null);
       setEditingCustomer(null);
-      setScreen("dashboard");
+      navigate("/");
 
       setMessage("Logged out successfully.");
     } catch (err) {
@@ -365,36 +382,19 @@ function App() {
     }
   }
 
-  async function loadBills() {
-    setIsBillsLoading(true);
-    setBillsError(null);
+  async function loadCustomers(
+    forceRefresh = false,
+  ): Promise<Customer[] | null> {
+    const now = Date.now();
 
-    try {
-      const session = await getSession();
+    const cacheIsFresh =
+      customersLoadedAt !== null &&
+      now - customersLoadedAt < DATA_CACHE_MAX_AGE;
 
-      if (!session?.access_token) {
-        throw new Error(
-          "Your session has expired. Please log in again.",
-        );
-      }
-
-      const savedBills = await getBills(
-        session.access_token,
-      );
-
-      setBills(savedBills);
-    } catch (error) {
-      setBillsError(
-        error instanceof Error
-          ? error.message
-          : "Unable to load bills.",
-      );
-    } finally {
-      setIsBillsLoading(false);
+    if (!forceRefresh && cacheIsFresh) {
+      return customers;
     }
-  }
 
-  async function loadCustomers() {
     setIsCustomersLoading(true);
     setCustomersError(null);
 
@@ -413,14 +413,63 @@ function App() {
         );
 
       setCustomers(savedCustomers);
+      setCustomersLoadedAt(Date.now());
+
+      return savedCustomers;
     } catch (error) {
       setCustomersError(
         error instanceof Error
           ? error.message
           : "Unable to load customers.",
       );
+
+      return null;
     } finally {
       setIsCustomersLoading(false);
+    }
+  }
+
+  async function loadBills(
+    forceRefresh = false,
+  ) {
+    const now = Date.now();
+
+    const cacheIsFresh =
+      billsLoadedAt !== null &&
+      now - billsLoadedAt < DATA_CACHE_MAX_AGE;
+
+    if (!forceRefresh && cacheIsFresh) {
+      return;
+    }
+
+    setBillsError(null);
+
+    try {
+      const session = await getSession();
+
+      if (!session?.access_token) {
+        throw new Error(
+          "Your session has expired. Please log in again.",
+        );
+      }
+
+      setIsBillsLoading(true);
+
+      const savedBills =
+        await getBills(
+          session.access_token,
+        );
+
+      setBills(savedBills);
+      setBillsLoadedAt(Date.now());
+    } catch (error) {
+      setBillsError(
+        error instanceof Error
+          ? error.message
+          : "Unable to load bills.",
+      );
+    } finally {
+      setIsBillsLoading(false);
     }
   }
 
@@ -444,6 +493,7 @@ function App() {
         );
       }
 
+      const createdCustomer =
       await createCustomer(
         session.access_token,
         {
@@ -454,9 +504,14 @@ function App() {
         },
       );
 
-      await loadCustomers();
+    setCustomers((previous) => [
+      createdCustomer,
+      ...previous,
+    ]);
 
-      setScreen("customers");
+    setCustomersLoadedAt(Date.now());
+
+    navigate("/customers");
     } catch (error) {
       setCustomerSaveError(
         error instanceof Error
@@ -492,22 +547,32 @@ function App() {
         );
       }
 
-      await updateCustomer(
-        session.access_token,
-        editingCustomer.id,
-        {
-          name: customer.name,
-          phone: customer.phone || null,
-          email: customer.email || null,
-          address: customer.address || null,
-        },
+      const updatedCustomer =
+        await updateCustomer(
+          session.access_token,
+          editingCustomer.id,
+          {
+            name: customer.name,
+            phone: customer.phone || null,
+            email: customer.email || null,
+            address: customer.address || null,
+          },
+        );
+
+      setCustomers((previous) =>
+        previous.map((item) =>
+          item.id === updatedCustomer.id
+            ? updatedCustomer
+            : item,
+        ),
       );
+
+      setCustomersLoadedAt(Date.now());
 
       setEditingCustomer(null);
 
-      await loadCustomers();
-
-      setScreen("customers");
+      navigate("/customers");
+    
     } catch (error) {
       setCustomerSaveError(
         error instanceof Error
@@ -518,6 +583,151 @@ function App() {
       setIsCustomerSaving(false);
     }
   }
+
+  useEffect(() => {
+    if (!currentUser || !business) {
+      return;
+    }
+
+    if (location.pathname === "/bills") {
+      loadBills();
+    }
+
+    if (location.pathname === "/customers") {
+      loadCustomers();
+    }
+  }, [
+    currentUser,
+    business,
+    location.pathname,
+  ]);
+
+  useEffect(() => {
+    if (!currentUser || !business) {
+      return;
+    }
+
+    if (location.pathname === "/bills/new") {
+      return;
+    }
+
+    const match =
+      location.pathname.match(/^\/bills\/([^/]+)$/);
+
+    if (!match) {
+      return;
+    }
+
+    const billId = match[1];
+
+    if (savedBill?.id === billId) {
+      return;
+    }
+
+    async function loadBill() {
+      setIsBillLoading(true);
+      setBillsError(null);
+
+      try {
+        const session = await getSession();
+
+        if (!session?.access_token) {
+          throw new Error(
+            "Your session has expired. Please log in again.",
+          );
+        }
+
+        const bill = await getBill(
+          session.access_token,
+          billId,
+        );
+
+        setSavedBill(bill);
+      } catch (error) {
+        setBillsError(
+          error instanceof Error
+            ? error.message
+            : "Unable to load the bill.",
+        );
+      } finally {
+        setIsBillLoading(false);
+      }
+    }
+
+    loadBill();
+  }, [
+    currentUser,
+    business,
+    location.pathname,
+    savedBill?.id,
+  ]);
+
+  useEffect(() => {
+    if (!currentUser || !business) {
+      return;
+    }
+
+    const match =
+      location.pathname.match(
+        /^\/customers\/([^/]+)\/edit$/,
+      );
+
+    if (!match) {
+      return;
+    }
+
+    const customerId = match[1];
+
+    if (editingCustomer?.id === customerId) {
+      return;
+    }
+
+    async function loadEditingCustomer() {
+      setIsEditingCustomerLoading(true);
+      setCustomerSaveError(null);
+
+      try {
+        let customer =
+          customers.find(
+            (item) => item.id === customerId,
+          ) ?? null;
+
+        if (!customer) {
+          const loadedCustomers =
+            await loadCustomers();
+
+          customer =
+            loadedCustomers?.find(
+              (item) => item.id === customerId,
+            ) ?? null;
+        }
+
+        if (!customer) {
+          throw new Error(
+            "Customer could not be found.",
+          );
+        }
+
+        setEditingCustomer(customer);
+      } catch (error) {
+        setCustomerSaveError(
+          error instanceof Error
+            ? error.message
+            : "Unable to load customer.",
+        );
+      } finally {
+        setIsEditingCustomerLoading(false);
+      }
+    }
+
+    loadEditingCustomer();
+  }, [
+    currentUser,
+    business,
+    location.pathname,
+    customers,
+    editingCustomer?.id,
+  ]);
 
   if (authInitializing) {
     return (
@@ -537,302 +747,377 @@ function App() {
     const navigation = (
       <AppNavbar
         onDashboard={() => {
-          setScreen("dashboard");
+          navigate("/dashboard");
         }}
         onCreateBill={() => {
-          setScreen("bill");
+          navigate("/bills/new");
         }}
         onBills={() => {
-          setScreen("history");
-          void loadBills();
+          navigate("/bills");
         }}
         onCustomers={() => {
-          setScreen("customers");
-          void loadCustomers();
+          navigate("/customers");
         }}
         onBusinessProfile={() => {
-          setScreen("profile");
+          navigate("/business");
         }}
         onLogout={handleLogout}
       />
     );
-    if (screen === "dashboard") {
-      return (
-        <>
-          {navigation}
-
-          <Dashboard
-            onCreateBill={() => {
-              setScreen("bill");
-            }}
-            onBills={() => {
-              setScreen("history");
-              void loadBills();
-            }}
-            onCustomers={() => {
-              setScreen("customers");
-              void loadCustomers();
-            }}
-            onBusinessProfile={() => {
-              setScreen("profile");
-            }}
-            onLogout={handleLogout}
-          />
-        </>
-      );
-    }
-
-    if (screen === "history") {
-      return (
-        <>
-          {navigation}
-
-          <BillHistory
-          bills={bills}
-          isLoading={isBillsLoading}
-          error={billsError}
-          onViewBill={async (billId) => {
-            try {
-              const session = await getSession();
-
-              if (!session?.access_token) {
-                throw new Error(
-                  "Your session has expired. Please log in again.",
-                );
-              }
-
-              const bill = await getBill(
-                session.access_token,
-                billId,
-              );
-
-              setSavedBill(bill);
-              setBillsError(null);
-              setScreen("preview");
-            } catch (error) {
-              setBillsError(
-                error instanceof Error
-                  ? error.message
-                  : "Unable to load the bill.",
-              );
-            }
-          }}
-          onCreateBill={() => {
-            setScreen("bill");
-          }}
-          onBack={() => {
-            setScreen("dashboard");
-          }}
-        />
-        </>
-      );
-    }
-
-    if (screen === "customer-form") {
-      return (
-      <>
-      {navigation}
-        <CustomerForm
-          customer={
-            editingCustomer
-              ? {
-                  name: editingCustomer.name,
-                  phone:
-                    editingCustomer.phone ?? "",
-                  email:
-                    editingCustomer.email ?? "",
-                  address:
-                    editingCustomer.address ?? "",
-                }
-              : undefined
-          }
-          isSaving={isCustomerSaving}
-          error={customerSaveError}
-          onSubmit={
-            editingCustomer
-              ? handleUpdateCustomer
-              : handleCreateCustomer
-          }
-          onCancel={() => {
-            setCustomerSaveError(null);
-            setEditingCustomer(null);
-            setScreen("customers");
-          }}
-        />
-      </>
-      );
-    }
-
-    if (screen === "customers") {
-      return (
-      <>
-      {navigation}
-        <CustomerList
-          customers={customers}
-          isLoading={isCustomersLoading}
-          error={customersError}
-          onAddCustomer={() => {
-            setCustomerSaveError(null);
-            setEditingCustomer(null);
-            setScreen("customer-form");
-          }}
-          onEditCustomer={(customer) => {
-            setCustomerSaveError(null);
-            setEditingCustomer(customer);
-            setScreen("customer-form");
-          }}
-          onBack={() => {
-            setScreen("dashboard");
-          }}
-        />
-      </>
-      );
-    }
-
-    if (
-      screen === "preview" &&
-      savedBill
-    ) {
-      return (
-      <>
-      {navigation}
-        <BillPreview
-          bill={savedBill}
-          businessName={business.name}
-          businessPhone={business.phone}
-          businessEmail={business.email}
-          businessAddress={business.address}
-          businessCity={business.city}
-          businessState={business.state}
-          businessPincode={business.pincode}
-          businessGstin={business.gstin}
-          businessUdyamNumber={business.udyam_number}
-          onCreateNew={() => {
-            setSavedBill(null);
-            setScreen("bill");
-          }}
-          onBack={() => {
-            setSavedBill(null);
-            setScreen("dashboard");
-          }}
-          onBackToBills={() => {
-            setScreen("history");
-            void loadBills();
-          }}
-        />
-      </>
-      );
-    }
-
-    if (screen === "bill") {
-      return (
-      <>
-      {navigation}
-        <BillEditor
-          business={business}
-          onCancel={() => {
-            setScreen("dashboard");
-          }}
-          onSaved={(bill) => {
-            setSavedBill(bill);
-            setMessage(null);
-            setScreen("preview");
-          }}
-        />
-      </>
-      );
-    }
 
     return (
       <>
         {navigation}
 
-        <BusinessProfilePage
-          business={business}
-          currentUserRole={currentUser.role}
-          saving={false}
-          loading={loading}
-          message={message}
-          error={error}
-          onBusinessChange={setBusiness}
-          onSubmit={async (event) => {
-            event.preventDefault();
-
-            setError(null);
-            setMessage(null);
-
-            try {
-              const session = await getSession();
-
-              if (!session?.access_token) {
-                throw new Error(
-                  "Your session has expired. Please log in again.",
-                );
-              }
-
-              const updated =
-                await updateBusinessProfile(
-                  session.access_token,
-                  {
-                    name: business.name,
-                    phone: business.phone,
-                    email: business.email,
-                    address: business.address,
-                    city: business.city,
-                    state: business.state,
-                    pincode: business.pincode,
-                    gstin: business.gstin,
-                    udyam_number: business.udyam_number,
-                    logo_path: business.logo_path,
-                    signature_path: business.signature_path,
-                    terms_and_conditions:
-                      business.terms_and_conditions,
-                    invoice_columns: business.invoice_columns,
-                  },
-                );
-
-              setBusiness(updated);
-
-              setCurrentUser((previous) =>
-                previous
-                  ? {
-                      ...previous,
-                      business_name: updated.name,
-                    }
-                  : previous,
-              );
-
-              setMessage(
-                "Business profile saved successfully.",
-              );
-            } catch (err) {
-              setError(
-                err instanceof Error
-                  ? err.message
-                  : "Unable to save business profile.",
-              );
+        <Routes>
+          <Route
+            path="/"
+            element={
+              <Navigate
+                to="/dashboard"
+                replace
+              />
             }
-          }}
-          onBack={() => {
-            setScreen("dashboard");
-          }}
-          onBills={() => {
-            setScreen("history");
-            void loadBills();
-          }}
-          onCreateBill={() => {
-            setScreen("bill");
-          }}
-          onCustomers={() => {
-            setScreen("customers");
-            void loadCustomers();
-          }}
-          onLogout={handleLogout}
-        />
+          />
+
+          <Route
+            path="/dashboard"
+            element={
+              <Dashboard
+                onCreateBill={() => {
+                  navigate("/bills/new");
+                }}
+                onBills={() => {
+                  navigate("/bills");
+                }}
+                onCustomers={() => {
+                  navigate("/customers");
+                }}
+                onBusinessProfile={() => {
+                  navigate("/business");
+                }}
+                onLogout={handleLogout}
+              />
+            }
+          />
+
+          <Route
+            path="/business"
+            element={
+              <BusinessProfilePage
+                business={business}
+                currentUserRole={currentUser.role}
+                saving={false}
+                loading={loading}
+                message={message}
+                error={error}
+                onBusinessChange={setBusiness}
+                onSubmit={async (event) => {
+                  event.preventDefault();
+
+                  setError(null);
+                  setMessage(null);
+
+                  try {
+                    const session = await getSession();
+
+                    if (!session?.access_token) {
+                      throw new Error(
+                        "Your session has expired. Please log in again.",
+                      );
+                    }
+
+                    const updated =
+                      await updateBusinessProfile(
+                        session.access_token,
+                        {
+                          name: business.name,
+                          phone: business.phone,
+                          email: business.email,
+                          address: business.address,
+                          city: business.city,
+                          state: business.state,
+                          pincode: business.pincode,
+                          gstin: business.gstin,
+                          udyam_number: business.udyam_number,
+                          logo_path: business.logo_path,
+                          signature_path:
+                            business.signature_path,
+                          terms_and_conditions:
+                            business.terms_and_conditions,
+                          invoice_columns:
+                            business.invoice_columns,
+                        },
+                      );
+
+                    setBusiness(updated);
+
+                    setCurrentUser((previous) =>
+                      previous
+                        ? {
+                            ...previous,
+                            business_name:
+                              updated.name,
+                          }
+                        : previous,
+                    );
+
+                    setMessage(
+                      "Business profile saved successfully.",
+                    );
+                  } catch (err) {
+                    setError(
+                      err instanceof Error
+                        ? err.message
+                        : "Unable to save business profile.",
+                    );
+                  }
+                }}
+                onBack={() => {
+                  navigate("/dashboard");
+                }}
+                onBills={() => {
+                  navigate("/bills");
+                }}
+                onCreateBill={() => {
+                  navigate("/bills/new");
+                }}
+                onCustomers={() => {
+                  navigate("/customers");
+                }}
+                onLogout={handleLogout}
+              />
+            }
+          />
+
+          <Route
+            path="/bills"
+            element={
+              <BillHistory
+                bills={bills}
+                isLoading={isBillsLoading}
+                error={billsError}
+                onRefresh={() => {
+                  loadBills(true);
+                }}
+                onViewBill={async (billId) => {
+                  try {
+                    const session = await getSession();
+
+                    if (!session?.access_token) {
+                      throw new Error(
+                        "Your session has expired. Please log in again.",
+                      );
+                    }
+
+                    const bill = await getBill(
+                      session.access_token,
+                      billId,
+                    );
+
+                    setSavedBill(bill);
+                    setBillsError(null);
+                    navigate(`/bills/${billId}`);
+                  } catch (error) {
+                    setBillsError(
+                      error instanceof Error
+                        ? error.message
+                        : "Unable to load the bill.",
+                    );
+                  }
+                }}
+                onCreateBill={() => {
+                  navigate("/bills/new");
+                }}
+                onBack={() => {
+                  navigate("/dashboard");
+                }}
+              />
+            }
+          />
+
+          <Route
+            path="/bills/new"
+            element={
+              <BillEditor
+              business={business}
+              customers={customers}
+              isLoadingCustomers={isCustomersLoading}
+              customerLoadError={customersError}
+              onCancel={() => {
+                navigate("/dashboard");
+              }}
+              onSaved={(bill) => {
+                const newBillListItem: BillListItem = {
+                  id: bill.id,
+                  invoice_number: bill.invoice_number,
+                  customer_name: bill.customer_name,
+                  total: bill.total,
+                  created_at: bill.created_at,
+                };
+
+                setBills((previous) => [
+                  newBillListItem,
+                  ...previous.filter(
+                    (item) => item.id !== newBillListItem.id,
+                  ),
+                ]);
+
+                setBillsLoadedAt(Date.now());
+
+                setSavedBill(bill);
+                setMessage(null);
+                navigate(`/bills/${bill.id}`);
+              }}
+            />
+            }
+          />
+
+          <Route
+            path="/bills/:billId"
+            element={
+              isBillLoading ? (
+                <main className="min-h-screen bg-slate-100 px-4 py-6">
+                  <div className="mx-auto flex min-h-[60vh] max-w-4xl items-center justify-center">
+                    <p className="text-sm font-medium text-slate-600">
+                      Loading bill...
+                    </p>
+                  </div>
+                </main>
+              ) : savedBill ? (
+                <BillPreview
+                  bill={savedBill}
+                  businessName={business.name}
+                  businessPhone={business.phone}
+                  businessEmail={business.email}
+                  businessAddress={business.address}
+                  businessCity={business.city}
+                  businessState={business.state}
+                  businessPincode={business.pincode}
+                  businessGstin={business.gstin}
+                  businessUdyamNumber={
+                    business.udyam_number
+                  }
+                  onCreateNew={() => {
+                    setSavedBill(null);
+                    navigate("/bills/new");
+                  }}
+                  onBack={() => {
+                    setSavedBill(null);
+                    navigate("/dashboard");
+                  }}
+                  onBackToBills={() => {
+                    navigate("/bills");
+                  }}
+                />
+              ) : (
+                <Navigate
+                  to="/bills"
+                  replace
+                />
+              )
+            }
+          />
+
+          <Route
+            path="/customers"
+            element={
+              <CustomerList
+                customers={customers}
+                isLoading={isCustomersLoading}
+                error={customersError}
+                onRefresh={() => {
+                  loadCustomers(true);
+                }}
+                onAddCustomer={() => {
+                  setCustomerSaveError(null);
+                  setEditingCustomer(null);
+                  navigate("/customers/new");
+                }}
+                onEditCustomer={(customer) => {
+                  setCustomerSaveError(null);
+                  setEditingCustomer(customer);
+                  navigate(
+                    `/customers/${customer.id}/edit`,
+                  );
+                }}
+                onBack={() => {
+                  navigate("/dashboard");
+                }}
+              />
+            }
+          />
+
+          <Route
+            path="/customers/new"
+            element={
+              <CustomerForm
+                customer={undefined}
+                isSaving={isCustomerSaving}
+                error={customerSaveError}
+                onSubmit={handleCreateCustomer}
+                onCancel={() => {
+                  setCustomerSaveError(null);
+                  setEditingCustomer(null);
+                  navigate("/customers");
+                }}
+              />
+            }
+          />
+
+          <Route
+            path="/customers/:customerId/edit"
+            element={
+              isEditingCustomerLoading ? (
+                <main className="min-h-screen bg-slate-100 px-4 py-6">
+                  <div className="mx-auto flex min-h-[60vh] max-w-4xl items-center justify-center">
+                    <p className="text-sm font-medium text-slate-600">
+                      Loading customer...
+                    </p>
+                  </div>
+                </main>
+              ) : (
+                <CustomerForm
+                  customer={
+                    editingCustomer
+                      ? {
+                          name: editingCustomer.name,
+                          phone:
+                            editingCustomer.phone ?? "",
+                          email:
+                            editingCustomer.email ?? "",
+                          address:
+                            editingCustomer.address ?? "",
+                        }
+                      : undefined
+                  }
+                  isSaving={isCustomerSaving}
+                  error={customerSaveError}
+                  onSubmit={handleUpdateCustomer}
+                  onCancel={() => {
+                    setCustomerSaveError(null);
+                    setEditingCustomer(null);
+                    navigate("/customers");
+                  }}
+                />
+              )
+            }
+          />
+
+          <Route
+            path="*"
+            element={
+              <Navigate
+                to="/dashboard"
+                replace
+              />
+            }
+          />
+        </Routes>
       </>
     );
   }
-
+  
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-8">
       <div className="mx-auto flex min-h-[90vh] max-w-md items-center justify-center">
