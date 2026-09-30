@@ -20,6 +20,7 @@ from app.core.database import engine, get_db
 from app.services.invoice_pdf import build_invoice_pdf
 from app.services.storage import (
     create_business_asset_signed_url,
+    delete_business_asset,
     upload_business_asset,
 )
 from app.models import (
@@ -69,8 +70,6 @@ class BusinessProfileUpdate(BaseModel):
     pincode: str | None = None
     gstin: str | None = None
     udyam_number: str | None = None
-    logo_path: str | None = None
-    signature_path: str | None = None
     terms_and_conditions: str | None = None
     invoice_columns: list[InvoiceColumn] = []
 
@@ -334,18 +333,6 @@ async def update_business(
         if profile.udyam_number
         else None
     )
-
-    business.logo_path = (
-        profile.logo_path.strip()
-        if profile.logo_path
-        else None
-    )
-
-    business.signature_path = (
-        profile.signature_path.strip()
-        if profile.signature_path
-        else None
-    )
     
     business.terms_and_conditions = (
         profile.terms_and_conditions.strip()
@@ -376,7 +363,19 @@ async def upload_business_asset_endpoint(
     user_id: UUID = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
+    if asset_type not in {"logo", "signature"}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid business asset type.",
+        )
+
     business = get_user_business(user_id, db)
+
+    previous_storage_path = (
+        business.logo_path
+        if asset_type == "logo"
+        else business.signature_path
+    )
 
     storage_path = await upload_business_asset(
         business_id=business.id,
@@ -391,6 +390,14 @@ async def upload_business_asset_endpoint(
 
     db.commit()
     db.refresh(business)
+
+    if (
+        previous_storage_path
+        and previous_storage_path != storage_path
+    ):
+        delete_business_asset(
+            storage_path=previous_storage_path,
+        )
 
     return {
         "asset_type": asset_type,

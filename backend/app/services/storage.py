@@ -100,6 +100,22 @@ async def upload_business_asset(
 
     return storage_path
 
+def delete_business_asset(
+    *,
+    storage_path: str,
+) -> None:
+    client = get_supabase_client()
+
+    try:
+        client.storage.from_(BUCKET_NAME).remove(
+            [storage_path]
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to delete previous business asset.",
+        ) from exc
+
 def create_business_asset_signed_url(
     *,
     storage_path: str,
