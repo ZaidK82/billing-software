@@ -191,6 +191,7 @@ export type CreateBillItem = {
   quantity: number;
   unit_price: number;
   custom_values: Record<string, unknown>;
+  highlight_style: string | null;
 };
 
 export type CreateBillRequest = {
@@ -208,6 +209,7 @@ export type SavedBillItem = {
   unit_price: string;
   line_total: string;
   custom_values: Record<string, unknown>;
+  highlight_style: string | null;
 };
 
 export type SavedBill = {

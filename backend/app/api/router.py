@@ -92,6 +92,8 @@ class BillItemCreate(BaseModel):
     quantity: int
     unit_price: Decimal
     custom_values: dict = {}
+    position: int | None = Field(default=None, ge=0)
+    highlight_style: str | None = None
 
 class BillCreate(BaseModel):
     customer_name: str
@@ -110,6 +112,8 @@ class BillItemResponse(BaseModel):
     unit_price: Decimal
     line_total: Decimal
     custom_values: dict
+    position: int
+    highlight_style: str | None = None
 
 
 class BillResponse(BaseModel):
@@ -532,6 +536,12 @@ async def create_bill(
                 "unit_price": item.unit_price,
                 "line_total": line_total,
                 "custom_values": item.custom_values,
+                "highlight_style": item.highlight_style,
+                "position": (
+                    item.position
+                    if item.position is not None
+                    else len(cleaned_items)
+                ),
             }
         )
 
@@ -631,6 +641,7 @@ async def create_bill(
             unit_price=item_data["unit_price"],
             line_total=item_data["line_total"],
             custom_values=item_data["custom_values"],
+            highlight_style=item_data["highlight_style"],
         )
 
         db.add(bill_item)
@@ -808,6 +819,12 @@ async def update_bill(
                 "unit_price": item.unit_price,
                 "line_total": line_total,
                 "custom_values": item.custom_values,
+                "highlight_style": item.highlight_style,
+                "position": (
+                    item.position
+                    if item.position is not None
+                    else len(cleaned_items)
+                ),
             }
         )
 
@@ -848,7 +865,6 @@ async def update_bill(
                 for column in bill_data.invoice_columns
             ]
 
-        # Replace the child items within the same transaction.
         bill.items.clear()
 
         for item_data in cleaned_items:
@@ -859,6 +875,8 @@ async def update_bill(
                     unit_price=item_data["unit_price"],
                     line_total=item_data["line_total"],
                     custom_values=item_data["custom_values"],
+                    position=item_data["position"],
+                    highlight_style=item_data["highlight_style"],
                 )
             )
 

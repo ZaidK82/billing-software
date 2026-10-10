@@ -25,6 +25,7 @@ type BillItem = {
   quantity: number;
   unit_price: number;
   custom_values: Record<string, unknown>;
+  highlight_style: string | null;
 };
 
 type BillEditorProps = {
@@ -87,6 +88,7 @@ function createItem(): BillItem {
     quantity: 1,
     unit_price: 0,
     custom_values: {},
+    highlight_style: null,
   };
 }
 
@@ -130,6 +132,7 @@ function BillEditor({
           quantity: item.quantity,
           unit_price: Number(item.unit_price),
           custom_values: { ...item.custom_values },
+          highlight_style: item.highlight_style ?? null,
         }))
       : [],
   );
@@ -289,6 +292,80 @@ function editItem(item: BillItem) {
   setEditingItemId(item.id);
 }
 
+function duplicateItem(itemId: string) {
+  setItems((currentItems) => {
+    const index = currentItems.findIndex(
+      (item) => item.id === itemId,
+    );
+
+    if (index === -1) {
+      return currentItems;
+    }
+
+    const original = currentItems[index];
+
+    const duplicate: BillItem = {
+      ...original,
+      id: crypto.randomUUID(),
+      custom_values: {
+        ...original.custom_values,
+      },
+    };
+
+    return [
+      ...currentItems.slice(0, index + 1),
+      duplicate,
+      ...currentItems.slice(index + 1),
+    ];
+  });
+}
+
+function moveItem(itemId: string, direction: -1 | 1) {
+  setItems((currentItems) => {
+    const index = currentItems.findIndex(
+      (item) => item.id === itemId,
+    );
+
+    const targetIndex = index + direction;
+
+    if (
+      index === -1 ||
+      targetIndex < 0 ||
+      targetIndex >= currentItems.length
+    ) {
+      return currentItems;
+    }
+
+    const reorderedItems = [...currentItems];
+
+    [
+      reorderedItems[index],
+      reorderedItems[targetIndex],
+    ] = [
+      reorderedItems[targetIndex],
+      reorderedItems[index],
+    ];
+
+    return reorderedItems;
+  });
+}
+
+function toggleItemHighlight(itemId: string) {
+  setItems((currentItems) =>
+    currentItems.map((item) =>
+      item.id === itemId
+        ? {
+            ...item,
+            highlight_style:
+              item.highlight_style === "yellow"
+                ? null
+                : "yellow",
+          }
+        : item,
+    ),
+  );
+}
+
 function removeItem(itemId: string) {
   setItems((currentItems) =>
     currentItems.filter(
@@ -394,11 +471,13 @@ function removeItem(itemId: string) {
         customer_phone: customerPhone.trim() || null,
         customer_address: customerAddress.trim() || null,
         invoice_columns: invoiceColumns,
-        items: items.map((item) => ({
+        items: items.map((item, index) => ({
           item_name: item.item_name.trim(),
           quantity: item.quantity,
           unit_price: item.unit_price,
           custom_values: item.custom_values,
+          position: index,
+          highlight_style: item.highlight_style ?? null,
         })),
       };
 
@@ -818,8 +897,12 @@ function removeItem(itemId: string) {
 
                     return (
                         <article
-                        key={item.id}
-                        className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+                          key={item.id}
+                          className={`rounded-xl border p-4 shadow-sm transition-colors ${
+                            item.highlight_style === "yellow"
+                              ? "border-amber-400 bg-amber-50 ring-1 ring-amber-200"
+                              : "border-slate-200 bg-white"
+                          }`}
                         >
                         <div className="flex items-start justify-between gap-3">
                             <div>
@@ -832,26 +915,65 @@ function removeItem(itemId: string) {
                             </h4>
                             </div>
 
-                            <div className="flex shrink-0 gap-1">
-                            <button
+                            <div className="flex flex-wrap justify-end gap-1">
+                              <button
                                 type="button"
-                                onClick={() =>
-                                editItem(item)
-                                }
-                                className="rounded-lg px-2.5 py-2 text-xs font-semibold text-blue-600 transition hover:bg-blue-50 active:bg-blue-100"
-                            >
-                                Edit
-                            </button>
+                                onClick={() => moveItem(item.id, -1)}
+                                disabled={index === 0 || saving}
+                                className="rounded-lg px-2 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+                                aria-label={`Move ${item.item_name || `item ${index + 1}`} up`}
+                              >
+                                ↑
+                              </button>
 
-                            <button
+                              <button
                                 type="button"
-                                onClick={() =>
-                                removeItem(item.id)
-                                }
-                                className="rounded-lg px-2.5 py-2 text-xs font-semibold text-red-600 transition hover:bg-red-50 active:bg-red-100"
-                            >
+                                onClick={() => moveItem(item.id, 1)}
+                                disabled={index === items.length - 1 || saving}
+                                className="rounded-lg px-2 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+                                aria-label={`Move ${item.item_name || `item ${index + 1}`} down`}
+                              >
+                                ↓
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => duplicateItem(item.id)}
+                                disabled={saving}
+                                className="rounded-lg px-2.5 py-2 text-xs font-semibold text-indigo-600 transition hover:bg-indigo-50 disabled:opacity-50"
+                              >
+                                Duplicate
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => toggleItemHighlight(item.id)}
+                                disabled={saving}
+                                aria-pressed={item.highlight_style === "yellow"}
+                                className="rounded-lg px-2.5 py-2 text-xs font-semibold text-amber-700 transition hover:bg-amber-100 disabled:opacity-50"
+                              >
+                                {item.highlight_style === "yellow"
+                                    ? "Unhighlight"
+                                    : "Highlight"}
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => editItem(item)}
+                                disabled={saving}
+                                className="rounded-lg px-2.5 py-2 text-xs font-semibold text-blue-600 transition hover:bg-blue-50 active:bg-blue-100 disabled:opacity-50"
+                              >
+                                Edit
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => removeItem(item.id)}
+                                disabled={saving}
+                                className="rounded-lg px-2.5 py-2 text-xs font-semibold text-red-600 transition hover:bg-red-50 active:bg-red-100 disabled:opacity-50"
+                              >
                                 Remove
-                            </button>
+                              </button>
                             </div>
                         </div>
 

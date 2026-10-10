@@ -423,7 +423,10 @@ def build_invoice_pdf(
     # efficiently on one page.
     # -----------------------------------------------------------------------
 
-    bill_items = list(bill.items or [])
+    bill_items = sorted(
+        bill.items or [],
+        key=lambda item: item.position,
+    )
     item_count = len(bill_items)
 
     if item_count <= 5:
@@ -1238,6 +1241,23 @@ def build_invoice_pdf(
             ]
         )
     )
+
+    # Apply saved row highlights. Row 0 is the table header,
+    # so invoice items begin at row 1.
+    for row_index, item in enumerate(bill_items, start=1):
+        if getattr(item, "highlight_style", None) == "yellow":
+            items_table.setStyle(
+                TableStyle(
+                    [
+                        (
+                            "BACKGROUND",
+                            (0, row_index),
+                            (-1, row_index),
+                            colors.HexColor("#FEF3C7"),
+                        ),
+                    ]
+                )
+            )
 
     # -----------------------------------------------------------------------
     # Totals / amount in words

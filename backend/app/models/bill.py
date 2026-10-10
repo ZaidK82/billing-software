@@ -97,8 +97,8 @@ class Bill(Base):
     items: Mapped[list["BillItem"]] = relationship(
         back_populates="bill",
         cascade="all, delete-orphan",
+        order_by="BillItem.position",
     )
-
 
 class BillItem(Base):
     __tablename__ = "bill_items"
@@ -113,6 +113,13 @@ class BillItem(Base):
         PostgreSQLUUID(as_uuid=True),
         ForeignKey("bills.id", ondelete="CASCADE"),
         nullable=False,
+    )
+
+    position: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
     )
 
     item_name: Mapped[str] = mapped_column(
@@ -140,6 +147,12 @@ class BillItem(Base):
         nullable=False,
         default=dict,
         server_default="{}",
+    )
+
+    highlight_style: Mapped[str | None] = mapped_column(
+        String(20),
+        nullable=True,
+        default=None,
     )
 
     bill: Mapped["Bill"] = relationship(

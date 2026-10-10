@@ -537,6 +537,11 @@ function BillPreview({
                 {bill.items.map((item) => (
                   <tr
                     key={item.id}
+                    style={
+                      item.highlight_style === "yellow"
+                        ? { backgroundColor: "#FEF3C7" }
+                        : undefined
+                    }
                     className="border-t border-slate-100"
                   >
                     {invoiceColumns.map(
