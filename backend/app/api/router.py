@@ -725,6 +725,156 @@ async def get_bill(
 
     return bill
 
+
+@router.put(
+    "/bills/{bill_id}",
+    response_model=BillResponse,
+)
+async def update_bill(
+    bill_id: UUID,
+    bill_data: BillCreate,
+    user_id: UUID = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    business = get_user_business(user_id, db)
+
+    bill = db.scalar(
+        select(Bill).where(
+            Bill.id == bill_id,
+            Bill.business_id == business.id,
+        )
+    )
+
+    if bill is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Bill not found.",
+        )
+
+    customer_name = bill_data.customer_name.strip()
+
+    if not customer_name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Customer name is required.",
+        )
+
+    if not bill_data.items:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one bill item is required.",
+        )
+
+    cleaned_items: list[dict] = []
+
+    for item in bill_data.items:
+        item_name = item.item_name.strip()
+
+        if not item_name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Every bill item must have a name.",
+            )
+
+        if item.quantity <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Item quantity must be greater than zero.",
+            )
+
+        if (
+            not item.unit_price.is_finite()
+            or item.unit_price < 0
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Item price must be a valid non-negative amount.",
+            )
+
+        line_total = (
+            Decimal(item.quantity) * item.unit_price
+        ).quantize(Decimal("0.01"))
+
+        if line_total > Decimal("9999999999.99"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Item amount exceeds the supported limit.",
+            )
+
+        cleaned_items.append(
+            {
+                "item_name": item_name,
+                "quantity": item.quantity,
+                "unit_price": item.unit_price,
+                "line_total": line_total,
+                "custom_values": item.custom_values,
+            }
+        )
+
+    subtotal = sum(
+        (item["line_total"] for item in cleaned_items),
+        Decimal("0.00"),
+    ).quantize(Decimal("0.01"))
+
+    if subtotal > Decimal("9999999999.99"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invoice total exceeds the supported limit.",
+        )
+
+    try:
+        # Update editable fields on the existing invoice.
+        # Deliberately preserve id, business_id, invoice_number,
+        # created_at, and terms_and_conditions.
+        bill.customer_name = customer_name
+        bill.customer_phone = (
+            bill_data.customer_phone.strip()
+            if bill_data.customer_phone
+            else None
+        )
+        bill.customer_address = (
+            bill_data.customer_address.strip()
+            if bill_data.customer_address
+            else None
+        )
+        bill.subtotal = subtotal
+        bill.total = subtotal
+
+        # Keep the saved invoice's column snapshot when the
+        # request does not explicitly supply one.
+        if bill_data.invoice_columns is not None:
+            bill.invoice_columns = [
+                column.model_dump()
+                for column in bill_data.invoice_columns
+            ]
+
+        # Replace the child items within the same transaction.
+        bill.items.clear()
+
+        for item_data in cleaned_items:
+            bill.items.append(
+                BillItem(
+                    item_name=item_data["item_name"],
+                    quantity=item_data["quantity"],
+                    unit_price=item_data["unit_price"],
+                    line_total=item_data["line_total"],
+                    custom_values=item_data["custom_values"],
+                )
+            )
+
+        db.commit()
+        db.refresh(bill)
+
+        return bill
+
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to update bill.",
+        ) from exc
+
+
 @router.delete(
     "/bills/{bill_id}",
     status_code=status.HTTP_204_NO_CONTENT,

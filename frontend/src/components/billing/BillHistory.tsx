@@ -6,6 +6,7 @@ type BillHistoryProps = {
   isLoading: boolean;
   error: string | null;
   onViewBill: (billId: string) => void;
+  onEditBill: (billId: string) => void;
   onCreateBill: () => void;
   onRefresh: () => void;
   onDeleteBill: (billId: string) => Promise<void>;
@@ -17,6 +18,7 @@ function BillHistory({
   isLoading,
   error,
   onViewBill,
+  onEditBill,
   onCreateBill,
   onRefresh,
   onDeleteBill,
@@ -186,6 +188,15 @@ async function handleDeleteBill(bill: BillListItem) {
                     className="min-h-10 rounded-lg px-3 text-sm font-semibold text-blue-600 transition hover:bg-blue-50 active:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     View Bill →
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => onEditBill(bill.id)}
+                    disabled={deletingBillId !== null}
+                    className="min-h-10 rounded-lg border border-slate-200 px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 active:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Edit
                   </button>
 
                   <button

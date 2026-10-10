@@ -9,6 +9,7 @@ import { getSession } from "../../lib/auth";
 
 import {
   saveBill,
+  updateBill,
 } from "../../lib/api";
 
 import type {
@@ -31,6 +32,7 @@ type BillEditorProps = {
   customers: Customer[];
   isLoadingCustomers: boolean;
   customerLoadError: string | null;
+  initialBill?: SavedBill | null;
   onCancel: () => void;
   onSaved: (bill: SavedBill) => void;
 };
@@ -93,29 +95,44 @@ function BillEditor({
   customers,
   isLoadingCustomers,
   customerLoadError,
+  initialBill = null,
   onCancel,
   onSaved,
 }: BillEditorProps) {
   const invoiceColumns =
-    business.invoice_columns.length > 0
-      ? [...business.invoice_columns].sort(
+    initialBill?.invoice_columns.length
+      ? [...initialBill.invoice_columns].sort(
           (a, b) => a.position - b.position,
         )
-      : DEFAULT_COLUMNS;
+      : business.invoice_columns.length > 0
+        ? [...business.invoice_columns].sort(
+            (a, b) => a.position - b.position,
+          )
+        : DEFAULT_COLUMNS;
 
   const [customerName, setCustomerName] =
-    useState("");
+    useState(initialBill?.customer_name ?? "");
 
   const [customerPhone, setCustomerPhone] =
-    useState("");
+    useState(initialBill?.customer_phone ?? "");
 
   const [customerAddress, setCustomerAddress] =
-    useState("");
+    useState(initialBill?.customer_address ?? "");
 
   const [selectedCustomerId, setSelectedCustomerId] =
     useState("");
 
-  const [items, setItems] = useState<BillItem[]>([]);
+  const [items, setItems] = useState<BillItem[]>(() =>
+    initialBill
+      ? initialBill.items.map((item) => ({
+          id: item.id,
+          item_name: item.item_name,
+          quantity: item.quantity,
+          unit_price: Number(item.unit_price),
+          custom_values: { ...item.custom_values },
+        }))
+      : [],
+  );
 
   const [draftItem, setDraftItem] =
     useState<BillItem>(createItem());
@@ -347,6 +364,20 @@ function removeItem(itemId: string) {
       }
     }
 
+    if (initialBill) {
+      const confirmed = window.confirm(
+        `Save changes to invoice ${initialBill.invoice_number}?\n\n` +
+          "The saved invoice and any PDF generated from it afterward " +
+          "will reflect these changes. Previously downloaded or " +
+          "shared copies will not change.\n\n" +
+          "Continue saving?",
+      );
+
+      if (!confirmed) {
+        return;
+      }
+    }
+
     setSaving(true);
 
     try {
@@ -358,23 +389,29 @@ function removeItem(itemId: string) {
         );
       }
 
-      const savedBill = await saveBill(
-        session.access_token,
-        {
-          customer_name: trimmedCustomerName,
-          customer_phone:
-            customerPhone.trim() || null,
-          customer_address:
-            customerAddress.trim() || null,
-          invoice_columns: invoiceColumns,
-          items: items.map((item) => ({
-            item_name: item.item_name.trim(),
-            quantity: item.quantity,
-            unit_price: item.unit_price,
-            custom_values: item.custom_values,
-          })),
-        },
-      );
+      const billPayload = {
+        customer_name: trimmedCustomerName,
+        customer_phone: customerPhone.trim() || null,
+        customer_address: customerAddress.trim() || null,
+        invoice_columns: invoiceColumns,
+        items: items.map((item) => ({
+          item_name: item.item_name.trim(),
+          quantity: item.quantity,
+          unit_price: item.unit_price,
+          custom_values: item.custom_values,
+        })),
+      };
+
+      const savedBill = initialBill
+        ? await updateBill(
+            session.access_token,
+            initialBill.id,
+            billPayload,
+          )
+        : await saveBill(
+            session.access_token,
+            billPayload,
+          );
 
       onSaved(savedBill);
     } catch (err) {
@@ -406,13 +443,14 @@ function removeItem(itemId: string) {
             </p>
 
             <h1 className="mt-2 text-2xl font-bold text-slate-900 sm:text-3xl">
-              Create Bill
+              {initialBill ? "Edit Invoice" : "Create Bill"}
             </h1>
-
             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 sm:text-base">
-              Enter customer details and add the items
-              being billed.
+              {initialBill
+                ? `Update the details for invoice ${initialBill.invoice_number}.`
+                : "Enter customer details and add the items being billed."}
             </p>
+
           </div>
 
           <form

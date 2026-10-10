@@ -667,9 +667,9 @@ function App() {
       return;
     }
 
-    const match =
-      location.pathname.match(/^\/bills\/([^/]+)$/);
-
+    const match = location.pathname.match(
+      /^\/bills\/([^/]+)(?:\/edit)?$/,
+    );
     if (!match) {
       return;
     }
@@ -963,15 +963,19 @@ function App() {
                 bills={bills}
                 isLoading={isBillsLoading}
                 error={billsError}
+                
                 onCreateBill={() => {
                   navigate("/bills/new");
                 }}
+                
                 onBack={() => {
                   navigate("/dashboard");
                 }}
+        
                 onRefresh={() => {
                   loadBills(true);
                 }}
+
                 onDeleteBill={async (billId) => {
                   const session = await getSession();
 
@@ -992,6 +996,7 @@ function App() {
                   setBillsLoadedAt(Date.now());
                   setBillsError(null);
                 }}
+
                 onViewBill={async (billId) => {
                   setIsBillLoading(true);
 
@@ -1030,6 +1035,9 @@ function App() {
                         : "Unable to load the bill.",
                     );
                   }
+                }}
+                onEditBill={(billId) => {
+                  navigate(`/bills/${billId}/edit`);
                 }}
               />
             }
@@ -1072,6 +1080,60 @@ function App() {
             />
             }
           />
+          
+          <Route
+            path="/bills/:billId/edit"
+            element={
+              isBillLoading ||
+              !savedBill ||
+              savedBill.id !== location.pathname.split("/")[2] ? (
+                <main className="min-h-screen bg-slate-100 px-4 py-6">
+                  <div className="mx-auto flex min-h-[60vh] max-w-4xl items-center justify-center">
+                    <p className="text-sm font-medium text-slate-600">
+                      Loading invoice for editing...
+                    </p>
+                  </div>
+                </main>
+              ) : (
+                <BillEditor
+                  key={savedBill.id}
+                  business={business}
+                  customers={customers}
+                  isLoadingCustomers={isCustomersLoading}
+                  customerLoadError={customersError}
+                  initialBill={savedBill}
+                  onCancel={() => {
+                    navigate("/bills");
+                  }}
+                  onSaved={(bill) => {
+                    const updatedBillListItem: BillListItem = {
+                      id: bill.id,
+                      invoice_number: bill.invoice_number,
+                      customer_name: bill.customer_name,
+                      total: bill.total,
+                      created_at: bill.created_at,
+                    };
+
+                    setBills((previous) =>
+                      previous.map((item) =>
+                        item.id === updatedBillListItem.id
+                          ? updatedBillListItem
+                          : item,
+                      ),
+                    );
+
+                    setBillsLoadedAt(Date.now());
+                    setSavedBill(bill);
+                    setIsBillLoading(false);
+                    setBillsError(null);
+
+                    navigate(`/bills/${bill.id}`);
+                  }}
+                />
+              )
+            }
+          />
+
 
           <Route
             path="/bills/:billId"

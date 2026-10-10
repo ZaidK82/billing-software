@@ -249,6 +249,37 @@ export async function saveBill(
   return response.json();
 }
 
+
+export async function updateBill(
+  accessToken: string,
+  billId: string,
+  bill: CreateBillRequest,
+): Promise<SavedBill> {
+  const response = await fetch(
+    `${API_URL}/bills/${billId}`,
+    {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(bill),
+    },
+  );
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+
+    throw new Error(
+      body?.detail ||
+        `Bill update failed: ${response.status}`,
+    );
+  }
+
+  return response.json();
+}
+
+
 export async function downloadBillPdf(
   accessToken: string,
   billId: string,
