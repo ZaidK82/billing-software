@@ -43,17 +43,36 @@ function BillPreview({
   onBack,
   onBackToBills,
 }: BillPreviewProps) {
-  console.log("Bill preview terms:", bill.terms_and_conditions);
 
   const [isDownloading, setIsDownloading] =
     useState(false);
 
   const [downloadError, setDownloadError] =
     useState<string | null>(null);
+
+  function formatMoney(value: string | number): string {
+    return `₹${Number(value).toLocaleString("en-IN", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+  }
+
+  function formatInvoiceDate(value: string): string {
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+      return "";
+    }
+
+    const day = String(date.getUTCDate()).padStart(2, "0");
+    const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+    const year = date.getUTCFullYear();
+
+    return `${day}-${month}-${year}`;
+  }
   
   const businessLocation = [
     businessCity,
-    businessState,
     businessPincode,
   ]
     .filter(Boolean)
@@ -113,14 +132,9 @@ function BillPreview({
           return String(item.quantity);
 
         case "unit_price":
-          return `₹${Number(
-            item.unit_price,
-          ).toFixed(2)}`;
-
+          return formatMoney(item.unit_price);
         case "line_total":
-          return `₹${Number(
-            item.line_total,
-          ).toFixed(2)}`;
+          return formatMoney(item.line_total);
 
         default:
           return "";
@@ -383,51 +397,21 @@ function BillPreview({
         )}
 
         <section className="overflow-hidden rounded-2xl bg-white shadow-sm">
-          <div className="border-b border-slate-200 p-5 sm:p-6 lg:p-8">
-            <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
-              <div className="min-w-0">
-                {logoUrl && (
-                    <div className="mb-4">
-                    <img
-                        src={logoUrl}
-                        alt={`${businessName} logo`}
-                        className="max-h-20 max-w-[180px] object-contain"
-                    />
-                    </div>
-                )}
+          <div className="border-b border-slate-200 px-5 pb-5 pt-6 sm:px-8 sm:pb-6">
+            <h1 className="mb-5 text-center text-xl font-bold tracking-wide text-slate-800 sm:text-2xl">
+              INVOICE
+            </h1>
 
-                <h1 className="break-words text-xl font-bold text-slate-900 sm:text-2xl">
-                    {businessName}
-                </h1>
-
-                {businessPhone && (
-                  <p className="mt-2 break-words text-sm text-slate-600">
-                    {businessPhone}
-                  </p>
-                )}
-
-                {businessEmail && (
-                <p className="break-words text-sm text-slate-600">
-                    {businessEmail}
-                </p>
-                )}
-
-                {businessGstin && (
-                <p className="mt-1 break-words text-sm text-slate-600">
-                    GSTIN: {businessGstin}
-                </p>
-                )}
-
-                {businessUdyamNumber && (
-                <p className="break-words text-sm text-slate-600">
-                    Udyam No.: {businessUdyamNumber}
-                </p>
-                )}
+            <div className="flex items-start justify-between gap-6">
+              <div className="min-w-0 flex-1">
+                <h2 className="break-words text-xl font-bold text-slate-900 sm:text-2xl">
+                  {businessName}
+                </h2>
 
                 {businessAddress && (
-                <p className="mt-1 whitespace-pre-line break-words text-sm text-slate-600">
+                  <p className="mt-1 whitespace-pre-line break-words text-sm text-slate-600">
                     {businessAddress}
-                </p>
+                  </p>
                 )}
 
                 {businessLocation && (
@@ -435,52 +419,96 @@ function BillPreview({
                     {businessLocation}
                   </p>
                 )}
+
+                {businessState && (
+                  <p className="break-words text-sm text-slate-600">
+                    State: {businessState}
+                  </p>
+                )}
+
+                {businessGstin && (
+                  <p className="break-words text-sm text-slate-600">
+                    GSTIN: {businessGstin}
+                  </p>
+                )}
+
+                {businessUdyamNumber && (
+                  <p className="break-words text-sm text-slate-600">
+                    Udyam No.: {businessUdyamNumber}
+                  </p>
+                )}
+
+                {businessPhone && (
+                  <p className="break-words text-sm text-slate-600">
+                    Phone: {businessPhone}
+                  </p>
+                )}
+
+                {businessEmail && (
+                  <p className="break-words text-sm text-slate-600">
+                    Email: {businessEmail}
+                  </p>
+                )}
               </div>
 
-              <div className="shrink-0 sm:text-right">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 sm:text-sm">
-                  Invoice
+              {logoUrl && (
+                <div className="flex w-1/3 shrink-0 justify-end">
+                  <img
+                    src={logoUrl}
+                    alt={`${businessName} logo`}
+                    className="max-h-24 max-w-full object-contain"
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="border-b border-slate-200 px-5 py-5 sm:px-8 sm:py-6">
+            <div className="flex flex-col gap-5 sm:flex-row sm:justify-between">
+              <div className="min-w-0 flex-1">
+                <p className="mb-2 text-xs font-bold text-slate-800">
+                  Bill To:
                 </p>
 
-                <p className="mt-1 break-all text-xl font-bold text-slate-900 sm:text-2xl">
+                <p className="break-words text-sm font-bold text-slate-900">
+                  {bill.customer_name || "Walk-in Customer"}
+                </p>
+
+                {bill.customer_phone && (
+                  <p className="mt-1 break-words text-sm text-slate-600">
+                    {bill.customer_phone}
+                  </p>
+                )}
+
+                {bill.customer_address && (
+                  <p className="mt-1 whitespace-pre-line break-words text-sm text-slate-600">
+                    {bill.customer_address}
+                  </p>
+                )}
+              </div>
+
+              <div className="grid shrink-0 grid-cols-[auto_auto] content-start gap-x-4 gap-y-2 text-sm sm:w-[240px]">
+                <span className="font-semibold text-slate-700">
+                  Invoice No:
+                </span>
+                <span className="break-all text-slate-900">
                   {bill.invoice_number}
-                </p>
+                </span>
 
-                <p className="mt-1 text-xs text-slate-500 sm:text-sm">
-                  {new Date(
-                    bill.created_at,
-                  ).toLocaleDateString("en-IN")}
-                </p>
+                <span className="font-semibold text-slate-700">
+                  Invoice Date:
+                </span>
+                <span className="text-slate-900">
+                  {formatInvoiceDate(bill.created_at)}
+                </span>
               </div>
             </div>
           </div>
 
-          <div className="border-b border-slate-200 p-5 sm:p-6 lg:p-8">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Bill To
-            </p>
-
-            <p className="mt-2 break-words text-base font-semibold text-slate-900">
-              {bill.customer_name}
-            </p>
-
-            {bill.customer_phone && (
-              <p className="mt-1 break-words text-sm text-slate-600">
-                {bill.customer_phone}
-              </p>
-            )}
-
-            {bill.customer_address && (
-              <p className="mt-1 whitespace-pre-line break-words text-sm text-slate-600">
-                {bill.customer_address}
-              </p>
-            )}
-          </div>
-
           <div className="overflow-x-auto">
             <table className="w-full min-w-[520px] text-sm">
-              <thead className="bg-slate-50">
-                <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
+              <thead className="bg-slate-800">
+                <tr className="text-left text-xs uppercase tracking-wide text-white">
                   {invoiceColumns.map((column) => (
                     <th
                       key={column.key}
@@ -538,7 +566,7 @@ function BillPreview({
                         return (
                           <td
                             key={column.key}
-                            className={`max-w-[240px] break-words px-3 py-4 text-slate-600 first:pl-5 last:pr-5 sm:first:pl-6 sm:last:pr-6 ${
+                            className={`max-w-[240px] break-words px-3 py-3 text-slate-600 first:pl-5 last:pr-5 sm:first:pl-6 sm:last:pr-6 ${
                               isNumeric
                                 ? "text-right"
                                 : ""
@@ -559,70 +587,76 @@ function BillPreview({
               </tbody>
             </table>
           </div>
-          <div className="border-t border-slate-200 p-5 sm:p-6 lg:p-8">
-            <div className="ml-auto w-full max-w-xs space-y-2">
-              <div className="flex justify-between gap-6 text-sm text-slate-600">
+
+          <div className="border-t border-slate-200 px-5 py-6 sm:px-8 sm:py-7">
+            {/* Totals */}
+            <div className="ml-auto w-full max-w-xs">
+              <div className="flex justify-between gap-6 py-2 text-sm text-slate-600">
                 <span>Subtotal</span>
-
-                <span className="whitespace-nowrap">
-                  ₹
-                  {Number(
-                    bill.subtotal,
-                  ).toFixed(2)}
+                <span className="whitespace-nowrap tabular-nums">
+                  {formatMoney(bill.subtotal)}
                 </span>
               </div>
 
-              <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 text-lg font-bold text-slate-900">
-                <span>Total</span>
-
-                <span className="whitespace-nowrap">
-                  ₹
-                  {Number(
-                    bill.total,
-                  ).toFixed(2)}
+              <div className="flex justify-between gap-6 border-t-2 border-slate-800 pt-3 text-base font-bold text-slate-900 sm:text-lg">
+                <span>TOTAL</span>
+                <span className="whitespace-nowrap tabular-nums">
+                  {formatMoney(bill.total)}
                 </span>
               </div>
             </div>
 
-            <div className="mt-5 border-t border-slate-100 pt-4">
-              <p className="text-xs font-semibold text-slate-500">
-                Amount in Words:
-              </p>
-
-              <p className="mt-1 text-sm leading-6 text-slate-700">
-                {billAmountInWords}
-              </p>
-            </div>
-
-            {bill.terms_and_conditions && (
-              <div className="mt-5 border-t border-slate-100 pt-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Terms & Conditions
+            {/* Amount in words */}
+            <div className="mt-6 border-t border-slate-200 pt-4">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-[140px_minmax(0,1fr)] sm:gap-4">
+                <p className="text-xs font-bold uppercase tracking-wide text-slate-700">
+                  Amount in Words
                 </p>
 
-                <p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-700">
+                <p className="break-words text-sm leading-6 text-slate-700">
+                  {billAmountInWords}
+                </p>
+              </div>
+            </div>
+
+            {/* Terms and conditions */}
+            {bill.terms_and_conditions && (
+              <div className="mt-5 border-t border-slate-200 pt-4">
+                <p className="text-xs font-bold uppercase tracking-wide text-slate-700">
+                  Terms &amp; Conditions
+                </p>
+
+                <p className="mt-2 whitespace-pre-line break-words text-sm leading-6 text-slate-600">
                   {bill.terms_and_conditions}
                 </p>
               </div>
             )}
 
+            {/* Authorized signature */}
             {signatureUrl && (
               <div className="mt-8 flex justify-end">
-                <div className="w-48 text-center">
+                <div className="flex w-48 flex-col items-center">
                   <img
                     src={signatureUrl}
                     alt="Authorized signature"
-                    className="mx-auto max-h-20 max-w-full object-contain"
+                    className="max-h-20 max-w-full object-contain"
                   />
 
-                  <div className="mt-2 border-t border-slate-300 pt-2">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <div className="mt-2 w-full border-t border-slate-400 pt-2 text-center">
+                    <p className="text-xs font-semibold text-slate-700">
                       Authorized Signatory
                     </p>
                   </div>
                 </div>
               </div>
             )}
+          </div>
+
+          {/* Invoice footer */}
+          <div className="border-t border-slate-200 px-5 py-4 text-center sm:px-8">
+            <p className="text-sm font-medium text-slate-600">
+              Thank you for your business.
+            </p>
           </div>
         </section>
 
