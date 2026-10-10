@@ -1,7 +1,8 @@
+
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, String, Text, func
+from sqlalchemy import DateTime, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -62,6 +63,7 @@ class Business(Base):
         String(50),
         nullable=True,
     )
+
     logo_path: Mapped[str | None] = mapped_column(
         String(500),
         nullable=True,
@@ -82,6 +84,20 @@ class Business(Base):
         nullable=False,
         default=list,
         server_default="[]",
+    )
+
+    invoice_prefix: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="INV-",
+        server_default="INV-",
+    )
+
+    next_invoice_number: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+        server_default="1",
     )
 
     created_at: Mapped[datetime] = mapped_column(

@@ -73,6 +73,9 @@ export type BusinessProfile = {
   signature_path: string | null;
   terms_and_conditions: string | null;
   invoice_columns: InvoiceColumn[];
+  invoice_prefix: string;
+  next_invoice_number: number;
+
 };
 
 export async function getBusinessProfile(

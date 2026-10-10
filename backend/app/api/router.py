@@ -10,7 +10,7 @@ from fastapi import (
     UploadFile,
     status,
 )
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -58,6 +58,8 @@ class BusinessProfileResponse(BaseModel):
     signature_path: str | None
     terms_and_conditions: str | None    
     invoice_columns: list[InvoiceColumn]
+    invoice_prefix: str
+    next_invoice_number: int
 
 
 class BusinessProfileUpdate(BaseModel):
@@ -72,6 +74,18 @@ class BusinessProfileUpdate(BaseModel):
     udyam_number: str | None = None
     terms_and_conditions: str | None = None
     invoice_columns: list[InvoiceColumn] = []
+    invoice_prefix: str = Field(
+        default="INV-",
+        min_length=1,
+        max_length=20,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9 /-]*$",
+    )
+
+    next_invoice_number: int = Field(
+        default=1,
+        ge=1,
+        le=2147483647,
+    )
 
 class BillItemCreate(BaseModel):
     item_name: str
@@ -345,6 +359,17 @@ async def update_business(
         for column in profile.invoice_columns
     ]
 
+    invoice_prefix = profile.invoice_prefix.strip()
+
+    if not invoice_prefix:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invoice prefix cannot be empty.",
+        )
+
+    business.invoice_prefix = invoice_prefix
+    business.next_invoice_number = profile.next_invoice_number
+
     if not business.name:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -520,27 +545,57 @@ async def create_bill(
 
     total = subtotal
 
-    latest_invoice_number = db.scalar(
-        select(func.max(Bill.invoice_number)).where(
-            Bill.business_id == business.id,
+    # Lock this business row so invoice-number allocation for
+    # the same business is serialized across concurrent requests.
+    locked_business = db.scalar(
+        select(Business)
+        .where(Business.id == business.id)
+        .with_for_update()
+    )
+
+    if locked_business is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Business not found.",
         )
-    )
 
-    if latest_invoice_number:
-        try:
-            latest_number = int(
-                latest_invoice_number.removeprefix(
-                    "INV-"
-                )
+    prefix = locked_business.invoice_prefix
+    prefix_length = len(prefix)
+
+    # Reconcile the configured sequence against existing
+    # numeric invoice suffixes for this prefix.
+    existing_numbers = db.scalars(
+        select(Bill.invoice_number).where(
+            Bill.business_id == locked_business.id,
+            Bill.invoice_number.startswith(prefix),
+        )
+    ).all()
+
+    highest_existing_number = 0
+
+    for existing_invoice_number in existing_numbers:
+        suffix = existing_invoice_number[prefix_length:]
+
+        if suffix.isdigit():
+            highest_existing_number = max(
+                highest_existing_number,
+                int(suffix),
             )
-        except ValueError:
-            latest_number = 0
-    else:
-        latest_number = 0
 
-    invoice_number = (
-        f"INV-{latest_number + 1:04d}"
+    allocated_number = max(
+        locked_business.next_invoice_number,
+        highest_existing_number + 1,
     )
+
+    if allocated_number >= 2147483647:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Invoice number sequence has reached its limit.",
+        )
+
+    invoice_number = f"{prefix}{allocated_number:04d}"
+
+    locked_business.next_invoice_number = allocated_number + 1
 
     bill = Bill(
         business_id=business.id,

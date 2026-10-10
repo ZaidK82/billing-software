@@ -466,6 +466,101 @@ function BusinessProfilePage({
               </p>
             </div>
 
+
+
+            <section className="rounded-xl border border-slate-200 p-4">
+              <h2 className="text-lg font-semibold text-slate-900">
+                Invoice Numbering
+              </h2>
+
+              <p className="mt-1 text-sm leading-6 text-slate-600">
+                Customize the prefix and next invoice sequence for
+                this business. Existing invoices will not be renumbered.
+              </p>
+
+              <div className="mt-4 space-y-4">
+                <div>
+                  <label
+                    htmlFor="invoice-prefix"
+                    className="mb-1 block text-sm font-medium text-slate-700"
+                  >
+                    Invoice Prefix
+                  </label>
+
+                  <input
+                    id="invoice-prefix"
+                    type="text"
+                    required
+                    maxLength={20}
+                    pattern="[A-Za-z0-9][A-Za-z0-9 /-]*"
+                    title="Use letters, numbers, hyphens, or slashes. Start with a letter or number."
+                    value={business.invoice_prefix}
+                    onChange={(event) =>
+                      updateBusiness({
+                        invoice_prefix: event.target.value,
+                      })
+                    }
+                    className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    placeholder="INV-"
+                  />
+
+                  <p className="mt-1 text-xs text-slate-500">
+                    Examples: INV-, TAX-, BILL/2026-
+                  </p>
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="next-invoice-number"
+                    className="mb-1 block text-sm font-medium text-slate-700"
+                  >
+                    Next Invoice Number
+                  </label>
+
+                  <input
+                    id="next-invoice-number"
+                    type="number"
+                    required
+                    min={1}
+                    max={2147483647}
+                    step={1}
+                    value={business.next_invoice_number}
+                    onChange={(event) =>
+                      updateBusiness({
+                        next_invoice_number: Number(
+                          event.target.value,
+                        ),
+                      })
+                    }
+                    className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  />
+
+                  <p className="mt-1 text-xs text-slate-500">
+                    The next available sequence number. Existing
+                    invoice numbers are preserved.
+                  </p>
+                </div>
+
+                <div className="rounded-lg bg-slate-50 p-3">
+                  <p className="text-xs font-medium text-slate-500">
+                    Format preview
+                  </p>
+
+                  <p className="mt-1 text-lg font-semibold text-slate-900">
+                    {(business.invoice_prefix || "INV-") +
+                      String(
+                        Math.max(
+                          1,
+                          business.next_invoice_number || 1,
+                        ),
+                      ).padStart(4, "0")}
+                  </p>
+                </div>
+              </div>
+            </section>
+
+
+
             <button
               type="submit"
               disabled={saving}

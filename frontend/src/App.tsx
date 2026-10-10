@@ -910,6 +910,8 @@ function App() {
                             business.terms_and_conditions,
                           invoice_columns:
                             business.invoice_columns,
+                          invoice_prefix: business.invoice_prefix,
+                          next_invoice_number: business.next_invoice_number,
                         },
                       );
 
