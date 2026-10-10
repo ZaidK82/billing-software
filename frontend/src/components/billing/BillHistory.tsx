@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { BillListItem } from "../../lib/api";
 
 type BillHistoryProps = {
@@ -7,6 +8,7 @@ type BillHistoryProps = {
   onViewBill: (billId: string) => void;
   onCreateBill: () => void;
   onRefresh: () => void;
+  onDeleteBill: (billId: string) => Promise<void>;
   onBack: () => void;
 };
 
@@ -17,8 +19,46 @@ function BillHistory({
   onViewBill,
   onCreateBill,
   onRefresh,
+  onDeleteBill,
   onBack,
 }: BillHistoryProps) {
+
+const [deletingBillId, setDeletingBillId] =
+  useState<string | null>(null);
+
+const [deleteError, setDeleteError] =
+  useState<string | null>(null);
+
+async function handleDeleteBill(bill: BillListItem) {
+  if (deletingBillId !== null) {
+    return;
+  }
+
+  const confirmed = window.confirm(
+    `Permanently delete invoice ${bill.invoice_number}?\n\n` +
+      "This action cannot be undone.",
+  );
+
+  if (!confirmed) {
+    return;
+  }
+
+  setDeletingBillId(bill.id);
+  setDeleteError(null);
+
+  try {
+    await onDeleteBill(bill.id);
+  } catch (error) {
+    setDeleteError(
+      error instanceof Error
+        ? error.message
+        : "Unable to delete this invoice. Please try again.",
+    );
+  } finally {
+    setDeletingBillId(null);
+  }
+}
+
   return (
     <main className="min-h-screen bg-slate-100 px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto w-full max-w-4xl">
@@ -39,6 +79,15 @@ function BillHistory({
             New Bill
           </button>
         </div>
+
+        {deleteError && (
+          <div
+            role="alert"
+            className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"
+          >
+            {deleteError}
+          </div>
+        )}
 
         <div className="mb-5 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -129,13 +178,25 @@ function BillHistory({
                   </p>
                 </div>
 
-                <div className="mt-4 border-t border-slate-100 pt-3">
+                <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
                   <button
                     type="button"
                     onClick={() => onViewBill(bill.id)}
-                    className="min-h-10 rounded-lg px-1 text-sm font-semibold text-blue-600 transition hover:bg-blue-50 active:bg-blue-100"
+                    disabled={deletingBillId !== null}
+                    className="min-h-10 rounded-lg px-3 text-sm font-semibold text-blue-600 transition hover:bg-blue-50 active:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     View Bill →
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => void handleDeleteBill(bill)}
+                    disabled={deletingBillId !== null}
+                    className="min-h-10 rounded-lg border border-red-200 px-3 text-sm font-semibold text-red-600 transition hover:bg-red-50 active:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {deletingBillId === bill.id
+                      ? "Deleting..."
+                      : "Delete"}
                   </button>
                 </div>
               </article>

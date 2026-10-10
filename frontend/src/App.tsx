@@ -26,6 +26,7 @@ import BusinessProfilePage from "./components/business/BusinessProfile";
 import {
   createBusiness,
   createCustomer,
+  deleteBill,
   getBill,
   getBills,
   getBusinessAssetUrl,
@@ -970,6 +971,26 @@ function App() {
                 }}
                 onRefresh={() => {
                   loadBills(true);
+                }}
+                onDeleteBill={async (billId) => {
+                  const session = await getSession();
+
+                  if (!session?.access_token) {
+                    throw new Error(
+                      "Your session has expired. Please log in again.",
+                    );
+                  }
+
+                  await deleteBill(session.access_token, billId);
+
+                  // Update the visible history only after server success.
+                  setBills((currentBills) =>
+                    currentBills.filter((bill) => bill.id !== billId),
+                  );
+
+                  // Keep the local cache timestamp consistent with the updated list.
+                  setBillsLoadedAt(Date.now());
+                  setBillsError(null);
                 }}
                 onViewBill={async (billId) => {
                   setIsBillLoading(true);

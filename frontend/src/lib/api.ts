@@ -282,6 +282,30 @@ export type BillListItem = {
   created_at: string;
 };
 
+export async function deleteBill(
+  accessToken: string,
+  billId: string,
+): Promise<void> {
+  const response = await fetch(
+    `${API_URL}/bills/${billId}`,
+    {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+
+    throw new Error(
+      body?.detail ||
+        `Bill deletion failed: ${response.status}`,
+    );
+  }
+}
+
 export async function getBills(
   accessToken: string,
 ): Promise<BillListItem[]> {

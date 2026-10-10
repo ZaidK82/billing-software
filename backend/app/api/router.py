@@ -725,6 +725,42 @@ async def get_bill(
 
     return bill
 
+@router.delete(
+    "/bills/{bill_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_bill(
+    bill_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    business = get_user_business(user_id, db)
+
+    bill = db.scalar(
+        select(Bill).where(
+            Bill.id == bill_id,
+            Bill.business_id == business.id,
+        )
+    )
+
+    if bill is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Bill not found.",
+        )
+
+    try:
+        db.delete(bill)
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to delete bill.",
+        ) from exc
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
 @router.post(
     "/customers",
     response_model=CustomerResponse,
