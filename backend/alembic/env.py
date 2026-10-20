@@ -18,6 +18,7 @@ from app.models import (
     Business,
     BusinessMembership,
     Customer,
+    Product,
 )
 
 

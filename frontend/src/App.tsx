@@ -22,6 +22,8 @@ import CustomerList from "./components/customers/CustomerList";
 import CustomerForm from "./components/customers/CustomerForm";
 import AppNavbar from "./components/navigation/AppNavbar";
 import BusinessProfilePage from "./components/business/BusinessProfile";
+import ProductList from "./components/products/ProductList";
+import ProductForm from "./components/products/ProductForm";
 
 import {
   createBusiness,
@@ -36,10 +38,16 @@ import {
   getHealth,
   updateBusinessProfile,
   updateCustomer,
+  createProduct,
+  deleteProduct,
+  getProducts,
+  updateProduct,
   type BillListItem,
   type BusinessProfile,
   type Customer,
   type SavedBill,
+  type Product,
+  type CreateProductRequest,
 } from "./lib/api";
 
 import {
@@ -116,7 +124,7 @@ function App() {
 
   const [savedBill, setSavedBill] =
     useState<SavedBill | null>(null);
-  
+
   const [isBillLoading, setIsBillLoading] =
     useState(true);
 
@@ -148,6 +156,26 @@ function App() {
     useState(false);
 
   const [customerSaveError, setCustomerSaveError] =
+    useState<string | null>(null);
+
+  const [products, setProducts] = useState<Product[]>([]);
+
+  const [productsLoadedAt, setProductsLoadedAt] =
+    useState<number | null>(null);
+
+  const [isProductsLoading, setIsProductsLoading] =
+    useState(false);
+
+  const [productsError, setProductsError] =
+    useState<string | null>(null);
+
+  const [editingProduct, setEditingProduct] =
+    useState<Product | null>(null);
+
+  const [isProductSaving, setIsProductSaving] =
+    useState(false);
+
+  const [productSaveError, setProductSaveError] =
     useState<string | null>(null);
 
   const [isBillsLoading, setIsBillsLoading] =
@@ -231,7 +259,7 @@ function App() {
           setAuthInitializing(false);
         }
       },
-    );    
+    );
     return () => {
       subscription.unsubscribe();
     };
@@ -655,7 +683,7 @@ async function handleAssetLoadError() {
       setEditingCustomer(null);
 
       navigate("/customers");
-    
+
     } catch (error) {
       setCustomerSaveError(
         error instanceof Error
@@ -666,6 +694,175 @@ async function handleAssetLoadError() {
       setIsCustomerSaving(false);
     }
   }
+
+
+  async function loadProducts(forceRefresh = false) {
+    const now = Date.now();
+
+    const cacheIsFresh =
+      productsLoadedAt !== null &&
+      now - productsLoadedAt < DATA_CACHE_MAX_AGE;
+
+    if (!forceRefresh && cacheIsFresh) {
+      return;
+    }
+
+    setIsProductsLoading(true);
+    setProductsError(null);
+
+    try {
+      const session = await getSession();
+
+      if (!session?.access_token) {
+        throw new Error(
+          "Your session has expired. Please log in again.",
+        );
+      }
+
+      const savedProducts = await getProducts(
+        session.access_token,
+      );
+
+      setProducts(savedProducts);
+      setProductsLoadedAt(Date.now());
+    } catch (err) {
+      setProductsError(
+        err instanceof Error
+          ? err.message
+          : "Unable to load products.",
+      );
+    } finally {
+      setIsProductsLoading(false);
+    }
+  }
+
+  async function handleCreateProduct(
+    values: {
+      name: string;
+      description: string;
+      default_unit_price: string;
+    },
+  ) {
+    setIsProductSaving(true);
+    setProductSaveError(null);
+
+    try {
+      const session = await getSession();
+
+      if (!session?.access_token) {
+        throw new Error(
+          "Your session has expired. Please log in again.",
+        );
+      }
+
+      const payload: CreateProductRequest = {
+        name: values.name.trim(),
+        description: values.description.trim() || null,
+        default_unit_price: Number(values.default_unit_price),
+      };
+
+      const createdProduct = await createProduct(
+        session.access_token,
+        payload,
+      );
+
+      setProducts((previous) =>
+        [...previous, createdProduct].sort((a, b) =>
+          a.name.localeCompare(b.name),
+        ),
+      );
+
+      setProductsLoadedAt(Date.now());
+      setEditingProduct(null);
+      navigate("/products");
+    } catch (err) {
+      setProductSaveError(
+        err instanceof Error
+          ? err.message
+          : "Unable to create product.",
+      );
+    } finally {
+      setIsProductSaving(false);
+    }
+  }
+
+  async function handleUpdateProduct(
+    values: {
+      name: string;
+      description: string;
+      default_unit_price: string;
+    },
+  ) {
+    if (!editingProduct) {
+      return;
+    }
+
+    setIsProductSaving(true);
+    setProductSaveError(null);
+
+    try {
+      const session = await getSession();
+
+      if (!session?.access_token) {
+        throw new Error(
+          "Your session has expired. Please log in again.",
+        );
+      }
+
+      const payload: CreateProductRequest = {
+        name: values.name.trim(),
+        description: values.description.trim() || null,
+        default_unit_price: Number(values.default_unit_price),
+      };
+
+      const updatedProduct = await updateProduct(
+        session.access_token,
+        editingProduct.id,
+        payload,
+      );
+
+      setProducts((previous) =>
+        previous
+          .map((item) =>
+            item.id === updatedProduct.id
+              ? updatedProduct
+              : item,
+          )
+          .sort((a, b) => a.name.localeCompare(b.name)),
+      );
+
+      setProductsLoadedAt(Date.now());
+      setEditingProduct(null);
+      navigate("/products");
+    } catch (err) {
+      setProductSaveError(
+        err instanceof Error
+          ? err.message
+          : "Unable to update product.",
+      );
+    } finally {
+      setIsProductSaving(false);
+    }
+  }
+
+  async function handleDeleteProduct(product: Product) {
+    const session = await getSession();
+
+    if (!session?.access_token) {
+      throw new Error(
+        "Your session has expired. Please log in again.",
+      );
+    }
+
+    await deleteProduct(session.access_token, product.id);
+
+    setProducts((previous) =>
+      previous.filter((item) => item.id !== product.id),
+    );
+
+    setProductsLoadedAt(Date.now());
+  }
+
 
   useEffect(() => {
     if (!currentUser || !business) {
@@ -683,6 +880,14 @@ async function handleAssetLoadError() {
 
     if (needsCustomers) {
       void loadCustomers();
+    }
+    const needsProducts =
+      location.pathname === "/products" ||
+      location.pathname === "/products/new" ||
+      /^\/products\/[^/]+\/edit$/.test(location.pathname);
+
+    if (needsProducts) {
+      void loadProducts();
     }
   }, [
     currentUser,
@@ -759,15 +964,109 @@ async function handleAssetLoadError() {
     savedBill?.id,
   ]);
 
+
   useEffect(() => {
     if (!currentUser || !business) {
       return;
     }
 
-    const match =
-      location.pathname.match(
-        /^\/customers\/([^/]+)\/edit$/,
-      );
+    const match = location.pathname.match(
+      /^\/products\/([^/]+)\/edit$/,
+    );
+
+    if (!match) {
+      return;
+    }
+
+    const productId = match[1];
+
+    if (editingProduct?.id === productId) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadEditingProduct() {
+      setProductSaveError(null);
+
+      try {
+        let product =
+          products.find((item) => item.id === productId) ??
+          null;
+
+        if (!product) {
+          await loadProducts(true);
+
+          if (cancelled) {
+            return;
+          }
+
+          // Read the refreshed catalogue through the API so
+          // direct navigation does not depend on stale state.
+          const session = await getSession();
+
+          if (!session?.access_token) {
+            throw new Error(
+              "Your session has expired. Please log in again.",
+            );
+          }
+
+          const loadedProducts = await getProducts(
+            session.access_token,
+          );
+
+          if (cancelled) {
+            return;
+          }
+
+          setProducts(loadedProducts);
+          setProductsLoadedAt(Date.now());
+
+          product =
+            loadedProducts.find(
+              (item) => item.id === productId,
+            ) ?? null;
+        }
+
+        if (!product) {
+          throw new Error("Product could not be found.");
+        }
+
+        if (!cancelled) {
+          setEditingProduct(product);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setProductSaveError(
+            err instanceof Error
+              ? err.message
+              : "Unable to load product.",
+          );
+        }
+      }
+    }
+
+    void loadEditingProduct();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    currentUser,
+    business,
+    location.pathname,
+    products,
+    editingProduct?.id,
+  ]);
+
+  useEffect(() => {
+    if (!currentUser || !business) {
+      return;
+    }
+
+    const match = location.pathname.match(
+      /^\/customers\/([^/]+)\/edit$/,
+    );
 
     if (!match) {
       return;
@@ -854,6 +1153,9 @@ async function handleAssetLoadError() {
         }}
         onCustomers={() => {
           navigate("/customers");
+        }}
+        onProducts={() => {
+          navigate("/products");
         }}
         onBusinessProfile={() => {
           navigate("/business");
@@ -996,15 +1298,15 @@ async function handleAssetLoadError() {
                 bills={bills}
                 isLoading={isBillsLoading}
                 error={billsError}
-                
+
                 onCreateBill={() => {
                   navigate("/bills/new");
                 }}
-                
+
                 onBack={() => {
                   navigate("/dashboard");
                 }}
-        
+
                 onRefresh={() => {
                   loadBills(true);
                 }}
@@ -1113,7 +1415,7 @@ async function handleAssetLoadError() {
             />
             }
           />
-          
+
           <Route
             path="/bills/:billId/edit"
             element={
@@ -1299,6 +1601,82 @@ async function handleAssetLoadError() {
             }
           />
 
+
+          <Route
+            path="/products"
+            element={
+              <ProductList
+                products={products}
+                isLoading={isProductsLoading}
+                error={productsError}
+                onRefresh={() => {
+                  void loadProducts(true);
+                }}
+                onAddProduct={() => {
+                  setProductSaveError(null);
+                  setEditingProduct(null);
+                  navigate("/products/new");
+                }}
+                onEditProduct={(product) => {
+                  setProductSaveError(null);
+                  setEditingProduct(product);
+                  navigate(`/products/${product.id}/edit`);
+                }}
+                onDeleteProduct={handleDeleteProduct}
+                onBack={() => {
+                  navigate("/dashboard");
+                }}
+              />
+            }
+          />
+
+          <Route
+            path="/products/new"
+            element={
+              <ProductForm
+                product={undefined}
+                isSaving={isProductSaving}
+                error={productSaveError}
+                onSubmit={handleCreateProduct}
+                onCancel={() => {
+                  setProductSaveError(null);
+                  setEditingProduct(null);
+                  navigate("/products");
+                }}
+              />
+            }
+          />
+
+          <Route
+            path="/products/:productId/edit"
+            element={
+              editingProduct &&
+              editingProduct.id ===
+                location.pathname.split("/")[2] ? (
+                <ProductForm
+                  product={editingProduct}
+                  isSaving={isProductSaving}
+                  error={productSaveError}
+                  onSubmit={handleUpdateProduct}
+                  onCancel={() => {
+                    setProductSaveError(null);
+                    setEditingProduct(null);
+                    navigate("/products");
+                  }}
+                />
+              ) : (
+                <main className="min-h-screen bg-slate-100 px-4 py-6">
+                  <div className="mx-auto flex min-h-[60vh] max-w-4xl items-center justify-center">
+                    <p className="text-sm font-medium text-slate-600">
+                      Loading product...
+                    </p>
+                  </div>
+                </main>
+              )
+            }
+          />
+
+
           <Route
             path="*"
             element={
@@ -1312,7 +1690,7 @@ async function handleAssetLoadError() {
       </>
     );
   }
-  
+
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-8">
       <div className="mx-auto flex min-h-[90vh] max-w-md items-center justify-center">

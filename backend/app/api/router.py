@@ -29,6 +29,7 @@ from app.models import (
     Business,
     BusinessMembership,
     Customer,
+    Product,
 )
 
 
@@ -198,6 +199,30 @@ class CustomerResponse(BaseModel):
     address: str | None
     created_at: object
     updated_at: object
+
+
+class ProductCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=150)
+    description: str | None = None
+    default_unit_price: Decimal = Field(ge=0)
+
+
+class ProductUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=150)
+    description: str | None = None
+    default_unit_price: Decimal = Field(ge=0)
+
+
+class ProductResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    name: str
+    description: str | None
+    default_unit_price: Decimal
+    created_at: object
+    updated_at: object
+
 
 def get_user_business(
     user_id: UUID,
@@ -1148,3 +1173,171 @@ async def update_customer(
     db.refresh(customer)
 
     return customer
+
+
+@router.get("/products", response_model=list[ProductResponse])
+async def list_products(
+    user_id: UUID = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    business = get_user_business(user_id, db)
+
+    return db.scalars(
+        select(Product)
+        .where(Product.business_id == business.id)
+        .order_by(Product.name.asc())
+    ).all()
+
+
+@router.get(
+    "/products/{product_id}",
+    response_model=ProductResponse,
+)
+async def get_product(
+    product_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    business = get_user_business(user_id, db)
+
+    product = db.scalar(
+        select(Product).where(
+            Product.id == product_id,
+            Product.business_id == business.id,
+        )
+    )
+
+    if product is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Product not found.",
+        )
+
+    return product
+
+
+@router.post(
+    "/products",
+    response_model=ProductResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_product(
+    payload: ProductCreate,
+    user_id: UUID = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    business = get_user_business(user_id, db)
+
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Product name is required.",
+        )
+
+    description = (
+        payload.description.strip()
+        if payload.description and payload.description.strip()
+        else None
+    )
+
+    if not payload.default_unit_price.is_finite():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Product price must be a valid amount.",
+        )
+
+    product = Product(
+        business_id=business.id,
+        name=name,
+        description=description,
+        default_unit_price=payload.default_unit_price,
+    )
+
+    db.add(product)
+    db.commit()
+    db.refresh(product)
+
+    return product
+
+
+@router.put(
+    "/products/{product_id}",
+    response_model=ProductResponse,
+)
+async def update_product(
+    product_id: UUID,
+    payload: ProductUpdate,
+    user_id: UUID = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    business = get_user_business(user_id, db)
+
+    product = db.scalar(
+        select(Product).where(
+            Product.id == product_id,
+            Product.business_id == business.id,
+        )
+    )
+
+    if product is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Product not found.",
+        )
+
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Product name is required.",
+        )
+
+    if not payload.default_unit_price.is_finite():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Product price must be a valid amount.",
+        )
+
+    product.name = name
+    product.description = (
+        payload.description.strip()
+        if payload.description and payload.description.strip()
+        else None
+    )
+    product.default_unit_price = payload.default_unit_price
+
+    db.commit()
+    db.refresh(product)
+
+    return product
+
+
+@router.delete(
+    "/products/{product_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_product(
+    product_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    business = get_user_business(user_id, db)
+
+    product = db.scalar(
+        select(Product).where(
+            Product.id == product_id,
+            Product.business_id == business.id,
+        )
+    )
+
+    if product is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Product not found.",
+        )
+
+    db.delete(product)
+    db.commit()
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -526,3 +526,144 @@ export async function updateCustomer(
 
   return response.json();
 }
+
+
+export type Product = {
+  id: string;
+  name: string;
+  description: string | null;
+  default_unit_price: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CreateProductRequest = {
+  name: string;
+  description: string | null;
+  default_unit_price: number;
+};
+
+export type UpdateProductRequest = CreateProductRequest;
+
+
+export async function getProducts(
+  accessToken: string,
+): Promise<Product[]> {
+  const response = await fetch(`${API_URL}/products`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+
+    throw new Error(
+      body?.detail || `Products request failed: ${response.status}`,
+    );
+  }
+
+  return response.json();
+}
+
+export async function getProduct(
+  accessToken: string,
+  productId: string,
+): Promise<Product> {
+  const response = await fetch(
+    `${API_URL}/products/${productId}`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+
+    throw new Error(
+      body?.detail || `Product request failed: ${response.status}`,
+    );
+  }
+
+  return response.json();
+}
+
+export async function createProduct(
+  accessToken: string,
+  product: CreateProductRequest,
+): Promise<Product> {
+  const response = await fetch(`${API_URL}/products`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(product),
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+
+    throw new Error(
+      body?.detail ||
+        `Product creation failed: ${response.status}`,
+    );
+  }
+
+  return response.json();
+}
+
+export async function updateProduct(
+  accessToken: string,
+  productId: string,
+  product: UpdateProductRequest,
+): Promise<Product> {
+  const response = await fetch(
+    `${API_URL}/products/${productId}`,
+    {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(product),
+    },
+  );
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+
+    throw new Error(
+      body?.detail ||
+        `Product update failed: ${response.status}`,
+    );
+  }
+
+  return response.json();
+}
+
+export async function deleteProduct(
+  accessToken: string,
+  productId: string,
+): Promise<void> {
+  const response = await fetch(
+    `${API_URL}/products/${productId}`,
+    {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+
+    throw new Error(
+      body?.detail ||
+        `Product deletion failed: ${response.status}`,
+    );
+  }
+}

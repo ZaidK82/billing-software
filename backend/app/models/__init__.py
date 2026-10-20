@@ -2,6 +2,7 @@ from app.models.bill import Bill, BillItem
 from app.models.business import Business
 from app.models.business_membership import BusinessMembership
 from app.models.customer import Customer
+from app.models.product import Product
 
 
 __all__ = [
@@ -10,4 +11,5 @@ __all__ = [
     "Business",
     "BusinessMembership",
     "Customer",
+    "Product",
 ]

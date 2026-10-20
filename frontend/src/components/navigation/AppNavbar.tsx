@@ -2,6 +2,7 @@ import { useState } from "react";
 
 type AppNavbarProps = {
   onDashboard: () => void;
+  onProducts: () => void;
   onCreateBill: () => void;
   onBills: () => void;
   onCustomers: () => void;
@@ -11,6 +12,7 @@ type AppNavbarProps = {
 
 function AppNavbar({
   onDashboard,
+  onProducts,
   onCreateBill,
   onBills,
   onCustomers,
@@ -75,6 +77,14 @@ function AppNavbar({
             className={desktopButtonClass}
           >
             Customers
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleNavigation(onProducts)}
+            className={desktopButtonClass}
+          >
+            Products
           </button>
 
           <button
@@ -147,6 +157,14 @@ function AppNavbar({
                 className="flex min-h-11 w-full items-center rounded-xl px-4 py-3 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-100 active:bg-slate-200"
               >
                 Customers
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleNavigation(onProducts)}
+                className="flex min-h-11 w-full items-center rounded-xl px-4 py-3 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-100 active:bg-slate-200"
+              >
+                Products
               </button>
 
               <button
