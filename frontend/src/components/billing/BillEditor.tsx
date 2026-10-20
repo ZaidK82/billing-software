@@ -1,4 +1,5 @@
 import {
+  useEffect,
   useMemo,
   useState,
 } from "react";
@@ -9,9 +10,7 @@ import { getSession } from "../../lib/auth";
 
 import {
   DEFAULT_INVOICE_APPEARANCE,
-} from "../../lib/api";
-
-import {
+  getProducts,
   saveBill,
   updateBill,
 } from "../../lib/api";
@@ -20,6 +19,7 @@ import type {
   BusinessProfile,
   Customer,
   InvoiceColumn,
+  Product,
   SavedBill,
 } from "../../lib/api";
 
@@ -152,6 +152,10 @@ function BillEditor({
   const [selectedCustomerId, setSelectedCustomerId] =
     useState("");
 
+  const [products, setProducts] = useState<Product[]>([]);
+  const [isLoadingProducts, setIsLoadingProducts] = useState(true);
+  const [productLoadError, setProductLoadError] = useState<string | null>(null);
+
   const [items, setItems] = useState<BillItem[]>(() =>
     initialBill
       ? initialBill.items.map((item) => ({
@@ -189,6 +193,47 @@ function BillEditor({
 
   const [plainTextError, setPlainTextError] =
     useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadProducts() {
+      try {
+        const session = await getSession();
+
+        if (!session?.access_token) {
+          throw new Error(
+            "Your session has expired. Please log in again.",
+          );
+        }
+
+        const result = await getProducts(session.access_token);
+
+        if (!cancelled) {
+          setProducts(result);
+          setProductLoadError(null);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setProductLoadError(
+            err instanceof Error
+              ? err.message
+              : "Unable to load products.",
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingProducts(false);
+        }
+      }
+    }
+
+    void loadProducts();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const subtotal = useMemo(() => {
     return items.reduce(
@@ -360,6 +405,43 @@ function BillEditor({
     setCustomerPhone(customer.phone ?? "");
     setCustomerAddress(customer.address ?? "");
   }
+
+function handleProductSelection(productId: string) {
+  if (!productId) {
+    return;
+  }
+
+  const product = products.find(
+    (item) => item.id === productId,
+  );
+
+  if (!product) {
+    return;
+  }
+
+  const unitPrice = Number(product.default_unit_price);
+
+  setDraftItem((currentItem) => {
+    const nextLineTotal =
+      priceEntryMode === "total"
+        ? Math.round(
+            currentItem.quantity * unitPrice * 100,
+          ) / 100
+        : null;
+
+    return {
+      ...currentItem,
+      item_name: product.name,
+      unit_price:
+        priceEntryMode === "total" &&
+        nextLineTotal !== null &&
+        currentItem.quantity > 0
+          ? nextLineTotal / currentItem.quantity
+          : unitPrice,
+      line_total: nextLineTotal,
+    };
+  });
+}
 
 function updateCoreItem(
   field: "item_name" | "quantity" | "unit_price",
@@ -1114,6 +1196,54 @@ function removeItem(itemId: string) {
                         ? "Enter the price per unit. The item total is calculated automatically."
                         : "Enter the item total before any discount. The rate is calculated automatically."}
                     </p>
+                  </div>
+
+                  <div className="mb-4">
+                    <label
+                      htmlFor="draft-product-selection"
+                      className="mb-1 block text-xs font-medium text-slate-600"
+                    >
+                      Select from product catalogue (optional)
+                    </label>
+
+                    <select
+                      id="draft-product-selection"
+                      value=""
+                      onChange={(event) =>
+                        handleProductSelection(event.target.value)
+                      }
+                      disabled={saving || isLoadingProducts}
+                      className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500 disabled:cursor-not-allowed disabled:bg-slate-50"
+                    >
+                      <option value="">
+                        {isLoadingProducts
+                          ? "Loading products..."
+                          : "Choose a product to fill item details"}
+                      </option>
+
+                      {products.map((product) => (
+                        <option key={product.id} value={product.id}>
+                          {product.name} — ₹
+                          {Number(product.default_unit_price).toFixed(2)}
+                        </option>
+                      ))}
+                    </select>
+
+                    {productLoadError && (
+                      <p className="mt-1 text-xs text-amber-700" role="status">
+                        Catalogue unavailable: {productLoadError}
+                        {" "}You can still enter items manually.
+                      </p>
+                    )}
+
+                    {!isLoadingProducts &&
+                      !productLoadError &&
+                      products.length === 0 && (
+                        <p className="mt-1 text-xs text-slate-500">
+                          No saved products yet. You can enter an item manually
+                          or add products from the Products page.
+                        </p>
+                      )}
                   </div>
 
                   {invoiceColumns.map((column) => (
