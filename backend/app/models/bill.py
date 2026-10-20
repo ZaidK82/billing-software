@@ -83,6 +83,33 @@ class Bill(Base):
         server_default="[]",
     )
 
+
+    appearance_settings: Mapped[dict] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=lambda: {
+            "invoice_title_size": 20,
+            "business_name_size": 17,
+            "business_details_size": 9,
+            "table_text_size": 9,
+            "logo_width_mm": 45,
+            "logo_height_mm": 25,
+            "signature_width_mm": 45,
+            "signature_height_mm": 25,
+        },
+        server_default=(
+            '{"invoice_title_size":20,'
+            '"business_name_size":17,'
+            '"business_details_size":9,'
+            '"table_text_size":9,'
+            '"logo_width_mm":45,'
+            '"logo_height_mm":25,'
+            '"signature_width_mm":45,'
+            '"signature_height_mm":25}'
+        ),
+    )
+
+
     terms_and_conditions: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,

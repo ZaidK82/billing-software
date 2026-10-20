@@ -112,6 +112,8 @@ function App() {
 
   const initializationStarted = useRef(false);
 
+  const assetRefreshInProgress = useRef(false);
+
   const [savedBill, setSavedBill] =
     useState<SavedBill | null>(null);
   
@@ -370,6 +372,7 @@ function App() {
     }
   }
 
+
   async function loadBusinessAssets(
     forceRefresh = false,
   ): Promise<{
@@ -380,8 +383,7 @@ function App() {
 
     const cacheIsFresh =
       assetsLoadedAt !== null &&
-      now - assetsLoadedAt <
-        ASSET_CACHE_MAX_AGE;
+      now - assetsLoadedAt < ASSET_CACHE_MAX_AGE;
 
     if (!forceRefresh && cacheIsFresh) {
       return {
@@ -400,27 +402,38 @@ function App() {
       }
 
       const [logoResult, signatureResult] =
-        await Promise.all([
+        await Promise.allSettled([
           getBusinessAssetUrl(
             session.access_token,
             "logo",
-          ).catch(() => null),
-
+          ),
           getBusinessAssetUrl(
             session.access_token,
             "signature",
-          ).catch(() => null),
+          ),
         ]);
 
       const nextLogoUrl =
-        logoResult?.url ?? null;
+        logoResult.status === "fulfilled"
+          ? logoResult.value.url
+          : null;
 
       const nextSignatureUrl =
-        signatureResult?.url ?? null;
+        signatureResult.status === "fulfilled"
+          ? signatureResult.value.url
+          : null;
 
       setLogoUrl(nextLogoUrl);
       setSignatureUrl(nextSignatureUrl);
-      setAssetsLoadedAt(Date.now());
+
+      if (
+        logoResult.status === "fulfilled" &&
+        signatureResult.status === "fulfilled"
+      ) {
+        setAssetsLoadedAt(Date.now());
+      } else {
+        setAssetsLoadedAt(null);
+      }
 
       return {
         logoUrl: nextLogoUrl,
@@ -436,7 +449,21 @@ function App() {
         signatureUrl: null,
       };
     }
-  } 
+  }
+
+async function handleAssetLoadError() {
+  if (assetRefreshInProgress.current) {
+    return;
+  }
+
+  assetRefreshInProgress.current = true;
+
+  try {
+    await loadBusinessAssets(true);
+  } finally {
+    assetRefreshInProgress.current = false;
+  }
+}
 
   async function loadCustomers(
     forceRefresh = false,
@@ -646,17 +673,23 @@ function App() {
     }
 
     if (location.pathname === "/bills") {
-      loadBills();
+      void loadBills();
     }
 
-    if (location.pathname === "/customers") {
-      loadCustomers();
+    const needsCustomers =
+      location.pathname === "/customers" ||
+      location.pathname === "/bills/new" ||
+      /^\/bills\/[^/]+\/edit$/.test(location.pathname);
+
+    if (needsCustomers) {
+      void loadCustomers();
     }
   }, [
     currentUser,
     business,
     location.pathname,
   ]);
+
 
   useEffect(() => {
     if (!currentUser || !business) {
@@ -1152,6 +1185,9 @@ function App() {
                   businessName={business.name}
                   logoUrl={logoUrl}
                   signatureUrl={signatureUrl}
+                  onRefreshAssets={() => {
+                    void handleAssetLoadError();
+                  }}
                   businessPhone={business.phone}
                   businessEmail={business.email}
                   businessAddress={business.address}

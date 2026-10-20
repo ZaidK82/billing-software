@@ -49,6 +49,42 @@ export async function createBusiness(accessToken: string) {
   return response.json();
 }
 
+
+
+export type InvoiceAppearanceSettings = {
+  invoice_title_size: number;
+  business_name_size: number;
+  business_details_size: number;
+  table_text_size: number;
+  logo_width_mm: number;
+  logo_height_mm: number;
+  signature_width_mm: number;
+  signature_height_mm: number;
+
+  customer_title_size: number;
+  customer_name_size: number;
+  customer_details_size: number;
+};
+
+
+
+export const DEFAULT_INVOICE_APPEARANCE: InvoiceAppearanceSettings = {
+  invoice_title_size: 20,
+  business_name_size: 17,
+  business_details_size: 9,
+  table_text_size: 9,
+  logo_width_mm: 45,
+  logo_height_mm: 25,
+  signature_width_mm: 45,
+  signature_height_mm: 25,
+
+  customer_title_size: 8.5,
+  customer_name_size: 10,
+  customer_details_size: 9,
+};
+
+
+
 export type InvoiceColumn = {
   key: string;
   label: string;
@@ -190,17 +226,21 @@ export type CreateBillItem = {
   item_name: string;
   quantity: number;
   unit_price: number;
+  line_total?: number;
   custom_values: Record<string, unknown>;
   highlight_style: string | null;
 };
+
 
 export type CreateBillRequest = {
   customer_name: string;
   customer_phone: string | null;
   customer_address: string | null;
   invoice_columns?: InvoiceColumn[];
+  appearance_settings: InvoiceAppearanceSettings;
   items: CreateBillItem[];
 };
+
 
 export type SavedBillItem = {
   id: string;
@@ -222,6 +262,7 @@ export type SavedBill = {
   total: string;
   created_at: string;
   invoice_columns: InvoiceColumn[];
+  appearance_settings: InvoiceAppearanceSettings;
   terms_and_conditions: string | null;
   items: SavedBillItem[];
 };

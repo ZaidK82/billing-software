@@ -8,6 +8,10 @@ import type { FormEvent } from "react";
 import { getSession } from "../../lib/auth";
 
 import {
+  DEFAULT_INVOICE_APPEARANCE,
+} from "../../lib/api";
+
+import {
   saveBill,
   updateBill,
 } from "../../lib/api";
@@ -19,11 +23,20 @@ import type {
   SavedBill,
 } from "../../lib/api";
 
+import {
+  parsePlainTextInvoice,
+} from "../../lib/plainTextInvoiceParser";
+
+import type {
+  ParsedPlainTextInvoice,
+} from "../../lib/plainTextInvoiceParser";
+
 type BillItem = {
   id: string;
   item_name: string;
   quantity: number;
   unit_price: number;
+  line_total: number | null;
   custom_values: Record<string, unknown>;
   highlight_style: string | null;
 };
@@ -81,12 +94,27 @@ const DEFAULT_COLUMNS: InvoiceColumn[] = [
   },
 ];
 
+const UNIT_OPTIONS = [
+  "PCS",
+  "SET",
+  "BOX",
+  "DOZEN",
+  "KG",
+  "G",
+  "LTR",
+  "ML",
+  "MTR",
+  "CM",
+  "OTHER",
+] as const;
+
 function createItem(): BillItem {
   return {
     id: crypto.randomUUID(),
     item_name: "",
     quantity: 1,
     unit_price: 0,
+    line_total: null,
     custom_values: {},
     highlight_style: null,
   };
@@ -131,6 +159,7 @@ function BillEditor({
           item_name: item.item_name,
           quantity: item.quantity,
           unit_price: Number(item.unit_price),
+          line_total: Number(item.line_total),
           custom_values: { ...item.custom_values },
           highlight_style: item.highlight_style ?? null,
         }))
@@ -139,6 +168,9 @@ function BillEditor({
 
   const [draftItem, setDraftItem] =
     useState<BillItem>(createItem());
+
+  const [priceEntryMode, setPriceEntryMode] =
+    useState<"rate" | "total">("rate");
 
   const [editingItemId, setEditingItemId] =
     useState<string | null>(null);
@@ -149,10 +181,21 @@ function BillEditor({
   const [saving, setSaving] =
     useState(false);
 
+  const [plainTextInput, setPlainTextInput] =
+  useState("");
+
+  const [parsedInvoice, setParsedInvoice] =
+    useState<ParsedPlainTextInvoice | null>(null);
+
+  const [plainTextError, setPlainTextError] =
+    useState<string | null>(null);
+
   const subtotal = useMemo(() => {
     return items.reduce(
       (sum, item) =>
-        sum + item.quantity * item.unit_price,
+        sum +
+        (item.line_total ??
+          item.quantity * item.unit_price),
       0,
     );
   }, [items]);
@@ -168,8 +211,24 @@ function BillEditor({
         return false;
     }
 
-    if (draftItem.unit_price < 0) {
-        return false;
+    if (
+      !Number.isFinite(draftItem.quantity) ||
+      draftItem.quantity <= 0 ||
+      !Number.isFinite(draftItem.unit_price) ||
+      draftItem.unit_price < 0
+    ) {
+      return false;
+    }
+
+    if (
+      priceEntryMode === "total" &&
+      (
+        draftItem.line_total === null ||
+        !Number.isFinite(draftItem.line_total) ||
+        draftItem.line_total < 0
+      )
+    ) {
+      return false;
     }
 
     for (const column of invoiceColumns) {
@@ -201,6 +260,82 @@ function BillEditor({
     items.length > 0 &&
     !saving;
 
+
+  function handleParsePlainText() {
+    setPlainTextError(null);
+    setParsedInvoice(null);
+
+    if (!plainTextInput.trim()) {
+      setPlainTextError("Paste invoice text first.");
+      return;
+    }
+
+    const result = parsePlainTextInvoice(plainTextInput);
+
+    setParsedInvoice(result);
+
+    if (result.items.length === 0) {
+      setPlainTextError(
+        "No complete product rows were detected. Check the warnings below.",
+      );
+    }
+  }
+
+  function applyParsedInvoice() {
+    if (!parsedInvoice || parsedInvoice.items.length === 0) {
+      return;
+    }
+
+    const hasExistingData =
+      customerName.trim().length > 0 ||
+      customerPhone.trim().length > 0 ||
+      customerAddress.trim().length > 0 ||
+      items.length > 0;
+
+    if (
+      hasExistingData &&
+      !window.confirm(
+        "Importing this text will replace the current item rows and update any customer fields detected in the text. Continue?",
+      )
+    ) {
+      return;
+    }
+
+    if (parsedInvoice.customer_name) {
+      setCustomerName(parsedInvoice.customer_name);
+    }
+
+    if (parsedInvoice.customer_phone) {
+      setCustomerPhone(parsedInvoice.customer_phone);
+    }
+
+    if (parsedInvoice.customer_address) {
+      setCustomerAddress(parsedInvoice.customer_address);
+    }
+
+    setSelectedCustomerId("");
+
+    setItems(
+      parsedInvoice.items.map((item) => ({
+        id: crypto.randomUUID(),
+        item_name: item.item_name,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+        line_total: null,
+        custom_values: {},
+        highlight_style: null,
+      })),
+    );
+
+    resetDraftItem();
+    setError(null);
+    setPlainTextError(null);
+    setParsedInvoice(null);
+    setPlainTextInput("");
+  }
+
+
+
   function handleCustomerChange(
     customerId: string,
   ) {
@@ -225,17 +360,89 @@ function BillEditor({
     setCustomerPhone(customer.phone ?? "");
     setCustomerAddress(customer.address ?? "");
   }
+
 function updateCoreItem(
-  field:
-    | "item_name"
-    | "quantity"
-    | "unit_price",
+  field: "item_name" | "quantity" | "unit_price",
   value: string | number,
 ) {
+  setDraftItem((currentItem) => {
+    if (field === "item_name") {
+      return {
+        ...currentItem,
+        item_name: String(value),
+      };
+    }
+
+    if (field === "quantity") {
+      const quantity = Number(value);
+
+      if (priceEntryMode === "total" && currentItem.line_total !== null) {
+        return {
+          ...currentItem,
+          quantity,
+          unit_price:
+            quantity > 0 ? currentItem.line_total / quantity : 0,
+        };
+      }
+
+      return {
+        ...currentItem,
+        quantity,
+        line_total: null,
+      };
+    }
+
+    return {
+      ...currentItem,
+      unit_price: Number(value),
+      line_total: null,
+    };
+  });
+}
+
+function updateDraftLineTotal(value: string) {
+  const amount = value === "" ? 0 : Number(value);
+
   setDraftItem((currentItem) => ({
     ...currentItem,
-    [field]: value,
+    line_total: amount,
+    unit_price:
+      currentItem.quantity > 0
+        ? amount / currentItem.quantity
+        : 0,
   }));
+}
+
+function changePriceEntryMode(mode: "rate" | "total") {
+  if (mode === priceEntryMode) {
+    return;
+  }
+
+  setDraftItem((currentItem) => {
+    if (mode === "total") {
+      const currentTotal =
+        currentItem.line_total ??
+        Math.round(
+          currentItem.quantity * currentItem.unit_price * 100,
+        ) / 100;
+
+      return {
+        ...currentItem,
+        line_total: currentTotal,
+        unit_price:
+          currentItem.quantity > 0
+            ? currentTotal / currentItem.quantity
+            : 0,
+      };
+    }
+
+    return {
+      ...currentItem,
+      line_total: null,
+    };
+  });
+
+  setPriceEntryMode(mode);
 }
 
 function updateCustomValue(
@@ -377,7 +584,7 @@ function removeItem(itemId: string) {
     resetDraftItem();
   }
 }
-  
+
   async function handleSubmit(
     event: FormEvent<HTMLFormElement>,
   ) {
@@ -471,10 +678,12 @@ function removeItem(itemId: string) {
         customer_phone: customerPhone.trim() || null,
         customer_address: customerAddress.trim() || null,
         invoice_columns: invoiceColumns,
+        appearance_settings: DEFAULT_INVOICE_APPEARANCE,
         items: items.map((item, index) => ({
           item_name: item.item_name.trim(),
           quantity: item.quantity,
           unit_price: item.unit_price,
+          line_total: item.line_total ?? undefined,
           custom_values: item.custom_values,
           position: index,
           highlight_style: item.highlight_style ?? null,
@@ -536,6 +745,155 @@ function removeItem(itemId: string) {
             onSubmit={handleSubmit}
             className="space-y-8"
           >
+
+
+          <section className="rounded-xl border border-slate-200 p-4 sm:p-5">
+            <h2 className="text-base font-semibold text-slate-900">
+              Fill Invoice from Text
+            </h2>
+
+            <p className="mt-1 text-sm text-slate-600">
+              Paste customer details and product lines in any of the
+              supported plain-text formats. Review the results before importing.
+            </p>
+
+            <textarea
+              value={plainTextInput}
+              onChange={(event) => {
+                setPlainTextInput(event.target.value);
+                setParsedInvoice(null);
+                setPlainTextError(null);
+              }}
+              rows={8}
+              disabled={saving}
+              placeholder={`Name - Customer name
+          Address - Customer address
+          Mobile number - 9876543210
+
+          Product A 100g
+          780/-
+
+          Product B 15pcs
+          20/- x 15 = 300/-`}
+              className="mt-4 w-full rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500"
+            />
+
+            {plainTextError && (
+              <p role="alert" className="mt-2 text-sm text-red-600">
+                {plainTextError}
+              </p>
+            )}
+
+            <button
+              type="button"
+              onClick={handleParsePlainText}
+              disabled={saving || !plainTextInput.trim()}
+              className="mt-3 min-h-11 w-full rounded-xl border border-blue-600 px-4 py-3 text-sm font-semibold text-blue-700 transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Parse Text
+            </button>
+
+            {parsedInvoice && (
+              <div className="mt-5 space-y-4">
+                <div className="rounded-lg bg-slate-50 p-3">
+                  <h3 className="font-semibold text-slate-900">
+                    Detected Customer Details
+                  </h3>
+
+                  <p className="mt-2 text-sm text-slate-700">
+                    Name: {parsedInvoice.customer_name || "Not detected"}
+                  </p>
+                  <p className="text-sm text-slate-700">
+                    Phone: {parsedInvoice.customer_phone || "Not detected"}
+                  </p>
+                  <p className="text-sm text-slate-700">
+                    Address: {parsedInvoice.customer_address || "Not detected"}
+                  </p>
+                </div>
+
+                <div>
+                  <h3 className="font-semibold text-slate-900">
+                    Detected Items ({parsedInvoice.items.length})
+                  </h3>
+
+                  {parsedInvoice.items.length > 0 ? (
+                    <div className="mt-2 overflow-x-auto rounded-lg border border-slate-200">
+                      <table className="w-full min-w-[520px] text-left text-sm">
+                        <thead className="bg-slate-50 text-slate-600">
+                          <tr>
+                            <th className="p-3">Item</th>
+                            <th className="p-3">Qty</th>
+                            <th className="p-3">Rate</th>
+                            <th className="p-3">Calculated Total</th>
+                            <th className="p-3">Stated Total</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {parsedInvoice.items.map((item, index) => (
+                            <tr
+                              key={`${item.item_name}-${index}`}
+                              className="border-t border-slate-200"
+                            >
+                              <td className="p-3">{item.item_name}</td>
+                              <td className="p-3">{item.quantity}</td>
+                              <td className="p-3">
+                                ₹{item.unit_price.toFixed(2)}
+                              </td>
+                              <td className="p-3">
+                                ₹{(item.quantity * item.unit_price).toFixed(2)}
+                              </td>
+                              <td className="p-3">
+                                {item.stated_total === null
+                                  ? "Not stated"
+                                  : `₹${item.stated_total.toFixed(2)}`}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-sm text-slate-600">
+                      No complete items were detected.
+                    </p>
+                  )}
+                </div>
+
+                {parsedInvoice.warnings.length > 0 && (
+                  <div
+                    role="status"
+                    className="rounded-lg border border-amber-300 bg-amber-50 p-3"
+                  >
+                    <h3 className="font-semibold text-amber-900">
+                      Please Review
+                    </h3>
+
+                    <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-amber-900">
+                      {parsedInvoice.warnings.map((warning, index) => (
+                        <li key={`${warning}-${index}`}>{warning}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                <p className="text-xs text-slate-500">
+                  Only detected customer fields and core item fields are imported.
+                  Custom item columns may need manual completion. Verify quantities,
+                  rates, and totals before saving.
+                </p>
+
+                <button
+                  type="button"
+                  onClick={applyParsedInvoice}
+                  disabled={saving || parsedInvoice.items.length === 0}
+                  className="min-h-11 w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Import into Invoice
+                </button>
+              </div>
+            )}
+          </section>
+
             <section>
               <h2 className="mb-4 text-base font-semibold text-slate-900">
                 Customer Details
@@ -718,7 +1076,47 @@ function removeItem(itemId: string) {
                 </div>
 
                 <div className="space-y-4">
-                {invoiceColumns.map((column) => (
+                  <div>
+                    <p className="mb-2 text-xs font-medium text-slate-600">
+                      Price entry mode
+                    </p>
+
+                    <div className="grid grid-cols-2 gap-2 rounded-lg bg-slate-100 p-1">
+                      <button
+                        type="button"
+                        onClick={() => changePriceEntryMode("rate")}
+                        aria-pressed={priceEntryMode === "rate"}
+                        className={`min-h-10 rounded-md px-3 py-2 text-sm font-semibold ${
+                          priceEntryMode === "rate"
+                            ? "bg-white text-blue-700 shadow-sm"
+                            : "text-slate-600 hover:bg-white/60"
+                        }`}
+                      >
+                        By rate
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => changePriceEntryMode("total")}
+                        aria-pressed={priceEntryMode === "total"}
+                        className={`min-h-10 rounded-md px-3 py-2 text-sm font-semibold ${
+                          priceEntryMode === "total"
+                            ? "bg-white text-blue-700 shadow-sm"
+                            : "text-slate-600 hover:bg-white/60"
+                        }`}
+                      >
+                        By total
+                      </button>
+                    </div>
+
+                    <p className="mt-2 text-xs text-slate-500">
+                      {priceEntryMode === "rate"
+                        ? "Enter the price per unit. The item total is calculated automatically."
+                        : "Enter the item total before any discount. The rate is calculated automatically."}
+                    </p>
+                  </div>
+
+                  {invoiceColumns.map((column) => (
                     <div key={column.key}>
                     <label
                         htmlFor={`draft-item-${column.key}`}
@@ -764,35 +1162,56 @@ function removeItem(itemId: string) {
                         )}
 
                     {column.source === "core" &&
-                        column.key === "unit_price" && (
+                      column.key === "unit_price" &&
+                      (priceEntryMode === "rate" ? (
                         <input
-                            id={`draft-item-${column.key}`}
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={draftItem.unit_price}
-                            onChange={(event) =>
+                          id={`draft-item-${column.key}`}
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={draftItem.unit_price}
+                          onChange={(event) =>
                             updateCoreItem(
-                                "unit_price",
-                                Number(event.target.value),
+                              "unit_price",
+                              Number(event.target.value),
                             )
-                            }
-                            className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+                          }
+                          className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"
                         />
-                        )}
+                      ) : (
+                        <div className="flex min-h-11 items-center rounded-lg bg-slate-100 px-3 py-2.5">
+                          <span className="text-sm font-medium text-slate-700">
+                            ₹{draftItem.unit_price.toFixed(2)} per unit
+                          </span>
+                        </div>
+                      ))}
+
 
                     {column.source === "core" &&
-                        column.key === "line_total" && (
+                      column.key === "line_total" &&
+                      (priceEntryMode === "total" ? (
+                        <input
+                          id={`draft-item-${column.key}`}
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={draftItem.line_total ?? ""}
+                          onChange={(event) =>
+                            updateDraftLineTotal(event.target.value)
+                          }
+                          className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+                        />
+                      ) : (
                         <div className="flex min-h-11 items-center rounded-lg bg-white px-3 py-2.5">
-                            <span className="text-sm font-semibold text-slate-900">
+                          <span className="text-sm font-semibold text-slate-900">
                             ₹
                             {(
-                                draftItem.quantity *
-                                draftItem.unit_price
+                              draftItem.quantity * draftItem.unit_price
                             ).toFixed(2)}
-                            </span>
+                          </span>
                         </div>
-                        )}
+                      ))}
+
 
                     {column.source === "custom" &&
                         column.type === "number" && (
@@ -836,27 +1255,48 @@ function removeItem(itemId: string) {
                             className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"
                         />
                         )}
-
-                    {column.source === "custom" &&
+                    
+                      {column.source === "custom" &&
                         column.type !== "number" &&
-                        column.type !== "date" && (
-                        <input
+                        column.type !== "date" &&
+                        column.key === "unit" && (
+                          <select
+                            id={`draft-item-${column.key}`}
+                            value={String(
+                              draftItem.custom_values[column.key] ?? "",
+                            )}
+                            onChange={(event) =>
+                              updateCustomValue(column.key, event.target.value)
+                            }
+                            disabled={saving}
+                            className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500 disabled:cursor-not-allowed disabled:bg-slate-50"
+                          >
+                            <option value="">Select unit</option>
+                            {UNIT_OPTIONS.filter((unit) => unit !== "OTHER").map((unit) => (
+                              <option key={unit} value={unit}>
+                                {unit}
+                              </option>
+                            ))}
+                            <option value="OTHER">Other</option>
+                          </select>
+                        )}
+
+                      {column.source === "custom" &&
+                        column.type !== "number" &&
+                        column.type !== "date" &&
+                        column.key !== "unit" && (
+                          <input
                             id={`draft-item-${column.key}`}
                             type="text"
                             value={String(
-                            draftItem.custom_values[
-                                column.key
-                            ] ?? "",
+                              draftItem.custom_values[column.key] ?? "",
                             )}
                             onChange={(event) =>
-                            updateCustomValue(
-                                column.key,
-                                event.target.value,
-                            )
+                              updateCustomValue(column.key, event.target.value)
                             }
                             className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"
                             placeholder={column.label}
-                        />
+                          />
                         )}
                     </div>
                 ))}
@@ -893,7 +1333,8 @@ function removeItem(itemId: string) {
                 <div className="space-y-3">
                     {items.map((item, index) => {
                     const lineTotal =
-                        item.quantity * item.unit_price;
+                      item.line_total ??
+                      item.quantity * item.unit_price;
 
                     return (
                         <article

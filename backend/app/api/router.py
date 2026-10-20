@@ -43,6 +43,29 @@ class InvoiceColumn(BaseModel):
     required: bool = False
 
 
+class InvoiceAppearanceSettings(BaseModel):
+    invoice_title_size: int = Field(default=20, ge=14, le=28)
+    business_name_size: int = Field(default=17, ge=12, le=24)
+    business_details_size: float = Field(
+        default=9, ge=7, le=14
+    )
+    table_text_size: float = Field(
+        default=9, ge=7, le=13
+    )
+    logo_width_mm: float = Field(
+        default=45, ge=15, le=65
+    )
+    logo_height_mm: float = Field(
+        default=25, ge=10, le=40
+    )
+    signature_width_mm: float = Field(
+        default=45, ge=15, le=65
+    )
+    signature_height_mm: float = Field(
+        default=25, ge=10, le=40
+    )
+
+
 class BusinessProfileResponse(BaseModel):
     id: UUID
     name: str
@@ -87,20 +110,28 @@ class BusinessProfileUpdate(BaseModel):
         le=2147483647,
     )
 
+
 class BillItemCreate(BaseModel):
     item_name: str
     quantity: int
     unit_price: Decimal
+    line_total: Decimal | None = None
     custom_values: dict = {}
     position: int | None = Field(default=None, ge=0)
     highlight_style: str | None = None
+
+
 
 class BillCreate(BaseModel):
     customer_name: str
     customer_phone: str | None = None
     customer_address: str | None = None
     invoice_columns: list[InvoiceColumn] | None = None
+    appearance_settings: InvoiceAppearanceSettings = Field(
+        default_factory=InvoiceAppearanceSettings
+    )
     items: list[BillItemCreate]
+
 
 
 class BillItemResponse(BaseModel):
@@ -128,6 +159,9 @@ class BillResponse(BaseModel):
     total: Decimal
     created_at: object
     invoice_columns: list[InvoiceColumn]
+    appearance_settings: InvoiceAppearanceSettings = Field(
+        default_factory=InvoiceAppearanceSettings
+    )
     terms_and_conditions: str | None
     items: list[BillItemResponse]
 
@@ -524,10 +558,40 @@ async def create_bill(
                 detail="Item price cannot be negative.",
             )
 
-        line_total = (
-            Decimal(item.quantity)
-            * item.unit_price
-        ).quantize(Decimal("0.01"))
+
+        if item.line_total is not None:
+            if (
+                not item.line_total.is_finite()
+                or item.line_total < 0
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Item total must be a valid non-negative amount.",
+                )
+
+            line_total = item.line_total.quantize(
+                Decimal("0.01")
+            )
+        else:
+            if (
+                not item.unit_price.is_finite()
+                or item.unit_price < 0
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Item rate must be a valid non-negative amount.",
+                )
+
+            line_total = (
+                Decimal(item.quantity) * item.unit_price
+            ).quantize(Decimal("0.01"))
+
+        if line_total > Decimal("9999999999.99"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Item amount exceeds the supported limit.",
+            )
+
 
         cleaned_items.append(
             {
@@ -627,6 +691,9 @@ async def create_bill(
             column.model_dump()
             for column in invoice_columns
         ],
+        appearance_settings=(
+            bill_data.appearance_settings.model_dump()
+        ),
         terms_and_conditions=business.terms_and_conditions,
     )
 
@@ -802,9 +869,31 @@ async def update_bill(
                 detail="Item price must be a valid non-negative amount.",
             )
 
-        line_total = (
-            Decimal(item.quantity) * item.unit_price
-        ).quantize(Decimal("0.01"))
+
+        if item.line_total is not None:
+            if (
+                not item.line_total.is_finite()
+                or item.line_total < 0
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Item total must be a valid non-negative amount.",
+                )
+
+            line_total = item.line_total.quantize(
+                Decimal("0.01")
+            )
+        else:
+            line_total = (
+                Decimal(item.quantity) * item.unit_price
+            ).quantize(Decimal("0.01"))
+
+        if line_total > Decimal("9999999999.99"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Item amount exceeds the supported limit.",
+            )
+
 
         if line_total > Decimal("9999999999.99"):
             raise HTTPException(
@@ -859,11 +948,17 @@ async def update_bill(
 
         # Keep the saved invoice's column snapshot when the
         # request does not explicitly supply one.
+
         if bill_data.invoice_columns is not None:
             bill.invoice_columns = [
                 column.model_dump()
                 for column in bill_data.invoice_columns
             ]
+
+        # Save the appearance settings with this invoice.
+        bill.appearance_settings = (
+            bill_data.appearance_settings.model_dump()
+        )
 
         bill.items.clear()
 

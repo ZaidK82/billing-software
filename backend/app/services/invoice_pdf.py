@@ -6,6 +6,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 from xml.sax.saxutils import escape
+import math
 
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
@@ -410,6 +411,63 @@ def build_invoice_pdf(
     for invoices with larger numbers of rows.
     """
 
+
+    # Read saved appearance settings with safe defaults.
+    raw_appearance = (
+        getattr(bill, "appearance_settings", None) or {}
+    )
+
+    def appearance_number(
+        key: str,
+        default: float,
+        minimum: float,
+        maximum: float,
+    ) -> float:
+        try:
+            value = float(raw_appearance.get(key, default))
+        except (TypeError, ValueError):
+            value = default
+
+        if not math.isfinite(value):
+            value = default
+
+        return max(minimum, min(value, maximum))
+
+    invoice_title_size = appearance_number(
+        "invoice_title_size", 20, 14, 28
+    )
+    business_name_size = appearance_number(
+        "business_name_size", 17, 12, 24
+    )
+    business_details_size = appearance_number(
+        "business_details_size", 9, 7, 14
+    )
+    customer_title_size = appearance_number(
+        "customer_title_size", 8.5, 7, 14
+    )
+    table_text_size = appearance_number(
+        "table_text_size", 9, 7, 13
+    )
+    customer_name_size = appearance_number(
+        "customer_name_size", 10, 7, 16
+    )
+    customer_details_size = appearance_number(
+        "customer_details_size", 9, 7, 14
+    )
+    logo_width_mm = appearance_number(
+        "logo_width_mm", 45, 15, 65
+    )
+    logo_height_mm = appearance_number(
+        "logo_height_mm", 25, 10, 40
+    )
+    signature_width_mm = appearance_number(
+        "signature_width_mm", 45, 15, 65
+    )
+    signature_height_mm = appearance_number(
+        "signature_height_mm", 25, 10, 40
+    )
+
+
     _register_fonts()
 
     buffer = BytesIO()
@@ -490,8 +548,8 @@ def build_invoice_pdf(
         "InvoiceBusinessName",
         parent=styles["Normal"],
         fontName=BOLD_FONT_NAME,
-        fontSize=17,
-        leading=21,
+        fontSize=business_name_size,
+        leading=business_name_size * 1.25,
         textColor=colors.HexColor("#111827"),
         alignment=TA_LEFT,
         spaceAfter=3,
@@ -501,8 +559,8 @@ def build_invoice_pdf(
         "InvoiceBusinessDetails",
         parent=styles["Normal"],
         fontName=REGULAR_FONT_NAME,
-        fontSize=8.8,
-        leading=12,
+        fontSize=business_details_size,
+        leading=business_details_size * 1.35,
         textColor=colors.HexColor("#4B5563"),
         alignment=TA_LEFT,
     )
@@ -511,8 +569,8 @@ def build_invoice_pdf(
         "InvoiceTitle",
         parent=styles["Normal"],
         fontName=BOLD_FONT_NAME,
-        fontSize=20,
-        leading=22,
+        fontSize=invoice_title_size,
+        leading=invoice_title_size * 1.15,
         textColor=colors.HexColor("#1F2937"),
         alignment=TA_CENTER,
     )
@@ -521,8 +579,8 @@ def build_invoice_pdf(
         "InvoiceMetaLabel",
         parent=styles["Normal"],
         fontName=BOLD_FONT_NAME,
-        fontSize=8,
-        leading=10,
+        fontSize=table_text_size,
+        leading=table_text_size * 1.25,
         textColor=colors.HexColor("#374151"),
         alignment=TA_LEFT,
     )
@@ -531,8 +589,8 @@ def build_invoice_pdf(
         "InvoiceMetaValue",
         parent=styles["Normal"],
         fontName=REGULAR_FONT_NAME,
-        fontSize=9,
-        leading=11,
+        fontSize=table_text_size,
+        leading=table_text_size * 1.3,
         textColor=colors.HexColor("#111827"),
         alignment=TA_LEFT,
     )
@@ -541,8 +599,8 @@ def build_invoice_pdf(
         "InvoiceBillToTitle",
         parent=styles["Normal"],
         fontName=BOLD_FONT_NAME,
-        fontSize=8.5,
-        leading=11,
+        fontSize=customer_title_size,
+        leading=customer_title_size * 1.3,
         textColor=colors.HexColor("#1F2937"),
         alignment=TA_LEFT,
         spaceAfter=3,
@@ -552,8 +610,8 @@ def build_invoice_pdf(
         "InvoiceCustomer",
         parent=styles["Normal"],
         fontName=REGULAR_FONT_NAME,
-        fontSize=9,
-        leading=13,
+        fontSize=customer_details_size,
+        leading=customer_details_size * 1.4,
         textColor=colors.HexColor("#111827"),
     )
 
@@ -561,8 +619,8 @@ def build_invoice_pdf(
         "InvoiceCustomerName",
         parent=customer_style,
         fontName=BOLD_FONT_NAME,
-        fontSize=10,
-        leading=13,
+        fontSize=customer_name_size,
+        leading=customer_name_size * 1.3,
         spaceAfter=1,
     )
 
@@ -570,8 +628,8 @@ def build_invoice_pdf(
         "InvoiceTableHeader",
         parent=styles["Normal"],
         fontName=BOLD_FONT_NAME,
-        fontSize=8.5,
-        leading=11,
+        fontSize=table_text_size,
+        leading=table_text_size * 1.25,
         textColor=colors.white,
         alignment=TA_LEFT,
     )
@@ -586,8 +644,8 @@ def build_invoice_pdf(
         "InvoiceItem",
         parent=styles["Normal"],
         fontName=REGULAR_FONT_NAME,
-        fontSize=8.8,
-        leading=12,
+        fontSize=table_text_size,
+        leading=table_text_size * 1.35,
         textColor=colors.HexColor("#111827"),
         alignment=TA_LEFT,
     )
@@ -694,14 +752,14 @@ def build_invoice_pdf(
 
     business_logo = _business_asset_image(
         getattr(business, "logo_path", None),
-        max_width=45 * mm,
-        max_height=25 * mm,
+        max_width=logo_width_mm * mm,
+        max_height=logo_height_mm * mm,
     )
 
     business_signature = _business_asset_image(
         getattr(business, "signature_path", None),
-        max_width=45 * mm,
-        max_height=25 * mm,
+        max_width=signature_width_mm * mm,
+        max_height=signature_height_mm * mm,
     )
 
     business_name = _clean_text(business.name) or "Business"

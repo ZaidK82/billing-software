@@ -1,9 +1,15 @@
 import { useState } from "react";
 
-import { downloadBillPdf } from "../../lib/api";
+import {
+  downloadBillPdf,
+  updateBill,
+  DEFAULT_INVOICE_APPEARANCE,
+} from "../../lib/api";
+
 import { getSession } from "../../lib/auth";
 
 import type {
+  InvoiceAppearanceSettings,
   InvoiceColumn,
   SavedBill,
 } from "../../lib/api";
@@ -13,6 +19,7 @@ type BillPreviewProps = {
   businessName: string;
   logoUrl: string | null;
   signatureUrl: string | null;
+  onRefreshAssets: () => void;
   businessPhone: string | null;
   businessEmail: string | null;
   businessAddress: string | null;
@@ -31,6 +38,7 @@ function BillPreview({
   businessName,
   logoUrl,
   signatureUrl,
+  onRefreshAssets,
   businessPhone,
   businessEmail,
   businessAddress,
@@ -44,7 +52,25 @@ function BillPreview({
   onBackToBills,
 }: BillPreviewProps) {
 
+  const [appearance, setAppearance] =
+    useState<InvoiceAppearanceSettings>(() => ({
+      ...DEFAULT_INVOICE_APPEARANCE,
+      ...(bill.appearance_settings ?? {}),
+    }));
+
+  const [isSavingAppearance, setIsSavingAppearance] =
+    useState(false);
+
+  const [appearanceMessage, setAppearanceMessage] =
+    useState<string | null>(null);
+
   const [isDownloading, setIsDownloading] =
+    useState(false);
+
+  const [logoRetryAttempted, setLogoRetryAttempted] =
+    useState(false);
+
+  const [signatureRetryAttempted, setSignatureRetryAttempted] =
     useState(false);
 
   const [downloadError, setDownloadError] =
@@ -304,6 +330,62 @@ function BillPreview({
     Number(bill.total),
   );
 
+
+  async function handleSaveAppearance() {
+    setIsSavingAppearance(true);
+    setAppearanceMessage(null);
+    setDownloadError(null);
+
+    try {
+      const session = await getSession();
+
+      if (!session?.access_token) {
+        throw new Error(
+          "Your session has expired. Please log in again.",
+        );
+      }
+
+      const payload = {
+        customer_name: bill.customer_name ?? "",
+        customer_phone: bill.customer_phone,
+        customer_address: bill.customer_address,
+        invoice_columns: bill.invoice_columns,
+        appearance_settings: {
+          ...DEFAULT_INVOICE_APPEARANCE,
+          ...appearance,
+        },
+        items: bill.items.map((item, index) => ({
+          item_name: item.item_name,
+          quantity: item.quantity,
+          unit_price: Number(item.unit_price),
+          line_total: Number(item.line_total),
+          custom_values: item.custom_values,
+          position: index,
+          highlight_style: item.highlight_style ?? null,
+        })),
+      };
+
+      await updateBill(
+        session.access_token,
+        bill.id,
+        payload,
+      );
+
+      setAppearanceMessage(
+        "Appearance settings saved. Download the PDF to see the saved layout.",
+      );
+    } catch (error) {
+      setAppearanceMessage(
+        error instanceof Error
+          ? error.message
+          : "Unable to save appearance settings.",
+      );
+    } finally {
+      setIsSavingAppearance(false);
+    }
+  }
+
+
   async function handleDownloadPdf() {
     setIsDownloading(true);
     setDownloadError(null);
@@ -396,56 +478,293 @@ function BillPreview({
           </div>
         )}
 
+
+        <section className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold text-slate-900">
+              Invoice Appearance
+            </h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Adjust the settings and see the invoice update immediately.
+              Save when you are satisfied with the result.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+            {(
+              [
+                {
+                  key: "invoice_title_size",
+                  label: "Invoice title",
+                  min: 14,
+                  max: 28,
+                  step: 1,
+                  unit: "pt",
+                },
+                {
+                  key: "business_name_size",
+                  label: "Business name",
+                  min: 12,
+                  max: 24,
+                  step: 1,
+                  unit: "pt",
+                },
+                {
+                  key: "business_details_size",
+                  label: "Business details",
+                  min: 7,
+                  max: 14,
+                  step: 0.5,
+                  unit: "pt",
+                },
+                {
+                  key: "table_text_size",
+                  label: "Table text",
+                  min: 7,
+                  max: 13,
+                  step: 0.5,
+                  unit: "pt",
+                },
+                {
+                  key: "logo_width_mm",
+                  label: "Logo maximum width",
+                  min: 15,
+                  max: 65,
+                  step: 1,
+                  unit: "mm",
+                },
+                {
+                  key: "logo_height_mm",
+                  label: "Logo maximum height",
+                  min: 10,
+                  max: 40,
+                  step: 1,
+                  unit: "mm",
+                },
+                {
+                  key: "signature_width_mm",
+                  label: "Signature maximum width",
+                  min: 15,
+                  max: 65,
+                  step: 1,
+                  unit: "mm",
+                },
+                {
+                  key: "signature_height_mm",
+                  label: "Signature maximum height",
+                  min: 10,
+                  max: 40,
+                  step: 1,
+                  unit: "mm",
+                },
+              ] as const
+            ).map((setting) => (
+              <label key={setting.key} className="block">
+                <span className="mb-2 block text-sm font-medium text-slate-700">
+                  {setting.label}
+                </span>
+
+                <div className="flex items-center gap-3">
+                  <input
+                    type="range"
+                    min={setting.min}
+                    max={setting.max}
+                    step={setting.step}
+                    value={appearance[setting.key]}
+                    disabled={isSavingAppearance}
+                    onChange={(event) => {
+                      const value = Number(event.target.value);
+
+                      setAppearance((current) => ({
+                        ...current,
+                        [setting.key]: value,
+                      }));
+
+                      setAppearanceMessage(null);
+                    }}
+                    className="w-full accent-blue-600 disabled:opacity-50"
+                  />
+
+                  <span className="w-16 shrink-0 text-right text-sm tabular-nums text-slate-700">
+                    {appearance[setting.key]} {setting.unit}
+                  </span>
+                </div>
+              </label>
+            ))}
+          </div>
+
+          
+         <div className="mt-5 border-t border-slate-200 pt-5">
+          <h3 className="mb-4 text-sm font-semibold text-slate-900">
+            Customer Details Appearance
+          </h3>
+
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+            {(
+              [
+                {
+                  key: "customer_title_size",
+                  label: "Customer section title",
+                  min: 7,
+                  max: 14,
+                  step: 0.5,
+                  unit: "pt",
+                },
+                {
+                  key: "customer_name_size",
+                  label: "Customer name",
+                  min: 7,
+                  max: 16,
+                  step: 0.5,
+                  unit: "pt",
+                },
+                {
+                  key: "customer_details_size",
+                  label: "Customer phone and address",
+                  min: 7,
+                  max: 14,
+                  step: 0.5,
+                  unit: "pt",
+                },
+              ] as const
+            ).map((setting) => (
+              <label key={setting.key} className="block">
+                <span className="mb-2 block text-sm font-medium text-slate-700">
+                  {setting.label}
+                </span>
+
+                <div className="flex items-center gap-3">
+                  <input
+                    type="range"
+                    min={setting.min}
+                    max={setting.max}
+                    step={setting.step}
+                    value={appearance[setting.key]}
+                    disabled={isSavingAppearance}
+                    onChange={(event) => {
+                      const value = Number(event.target.value);
+
+                      setAppearance((current) => ({
+                        ...current,
+                        [setting.key]: value,
+                      }));
+
+                      setAppearanceMessage(null);
+                    }}
+                    className="w-full accent-blue-600 disabled:opacity-50"
+                  />
+
+                  <span className="w-16 shrink-0 text-right text-sm tabular-nums text-slate-700">
+                    {appearance[setting.key]} {setting.unit}
+                  </span>
+                </div>
+              </label>
+            ))}
+          </div>
+          </div>
+
+
+          <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+            <button
+              type="button"
+              disabled={isSavingAppearance}
+              onClick={() => {
+                setAppearance({
+                  ...DEFAULT_INVOICE_APPEARANCE,
+                });
+                setAppearanceMessage(null);
+              }}
+              className="min-h-11 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              Reset to defaults
+            </button>
+
+            <button
+              type="button"
+              disabled={isSavingAppearance}
+              onClick={handleSaveAppearance}
+              className="min-h-11 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isSavingAppearance
+                ? "Saving appearance..."
+                : "Apply & Save Appearance"}
+            </button>
+          </div>
+
+          {appearanceMessage && (
+            <p
+              role="status"
+              className="mt-3 text-sm text-slate-600"
+            >
+              {appearanceMessage}
+            </p>
+          )}
+        </section>
+
+
         <section className="overflow-hidden rounded-2xl bg-white shadow-sm">
           <div className="border-b border-slate-200 px-5 pb-5 pt-6 sm:px-8 sm:pb-6">
-            <h1 className="mb-5 text-center text-xl font-bold tracking-wide text-slate-800 sm:text-2xl">
+            <h1
+              className="mb-5 text-center font-bold tracking-wide text-slate-800"
+              style={{ fontSize: `${appearance.invoice_title_size}pt` }}
+            >
               INVOICE
             </h1>
 
             <div className="flex items-start justify-between gap-6">
               <div className="min-w-0 flex-1">
-                <h2 className="break-words text-xl font-bold text-slate-900 sm:text-2xl">
+                <h2
+                  className="break-words font-bold text-slate-900"
+                  style={{ fontSize: `${appearance.business_name_size}pt` }}
+                >
                   {businessName}
                 </h2>
 
                 {businessAddress && (
-                  <p className="mt-1 whitespace-pre-line break-words text-sm text-slate-600">
+                  <p className="break-words text-slate-600"
+                      style={{ fontSize: `${appearance.business_details_size}pt` }}>
                     {businessAddress}
                   </p>
                 )}
 
                 {businessLocation && (
-                  <p className="break-words text-sm text-slate-600">
+                  <p className="break-words text-slate-600"
+                      style={{ fontSize: `${appearance.business_details_size}pt` }}>
                     {businessLocation}
                   </p>
                 )}
 
                 {businessState && (
-                  <p className="break-words text-sm text-slate-600">
+                  <p className="break-words text-slate-600"
+                      style={{ fontSize: `${appearance.business_details_size}pt` }}>
                     State: {businessState}
                   </p>
                 )}
 
                 {businessGstin && (
-                  <p className="break-words text-sm text-slate-600">
+                  <p className="break-words text-slate-600"
+                      style={{ fontSize: `${appearance.business_details_size}pt` }}>
                     GSTIN: {businessGstin}
                   </p>
                 )}
 
                 {businessUdyamNumber && (
-                  <p className="break-words text-sm text-slate-600">
+                  <p className="break-words text-slate-600"
+                      style={{ fontSize: `${appearance.business_details_size}pt` }}>
                     Udyam No.: {businessUdyamNumber}
                   </p>
                 )}
 
                 {businessPhone && (
-                  <p className="break-words text-sm text-slate-600">
+                  <p className="break-words text-slate-600"
+                      style={{ fontSize: `${appearance.business_details_size}pt` }}>
                     Phone: {businessPhone}
                   </p>
                 )}
 
                 {businessEmail && (
-                  <p className="break-words text-sm text-slate-600">
+                  <p className="break-words text-slate-600"
+                      style={{ fontSize: `${appearance.business_details_size}pt` }}>
                     Email: {businessEmail}
                   </p>
                 )}
@@ -456,7 +775,19 @@ function BillPreview({
                   <img
                     src={logoUrl}
                     alt={`${businessName} logo`}
-                    className="max-h-24 max-w-full object-contain"
+                    onError={() => {
+                      if (!logoRetryAttempted) {
+                        setLogoRetryAttempted(true);
+                        onRefreshAssets();
+                      }
+                    }}
+                    className="max-w-full object-contain"
+                    style={{
+                      width: `${appearance.logo_width_mm}mm`,
+                      height: `${appearance.logo_height_mm}mm`,
+                      maxWidth: "100%",
+                      objectFit: "contain",
+                    }}
                   />
                 </div>
               )}
@@ -465,27 +796,49 @@ function BillPreview({
 
           <div className="border-b border-slate-200 px-5 py-5 sm:px-8 sm:py-6">
             <div className="flex flex-col gap-5 sm:flex-row sm:justify-between">
+
               <div className="min-w-0 flex-1">
-                <p className="mb-2 text-xs font-bold text-slate-800">
+                <p
+                  className="mb-2 font-bold text-slate-800"
+                  style={{
+                    fontSize: `${appearance.customer_title_size}pt`,
+                  }}
+                >
                   Bill To:
                 </p>
 
-                <p className="break-words text-sm font-bold text-slate-900">
+                <p
+                  className="break-words font-bold text-slate-900"
+                  style={{
+                    fontSize: `${appearance.customer_name_size}pt`,
+                  }}
+                >
                   {bill.customer_name || "Walk-in Customer"}
                 </p>
 
                 {bill.customer_phone && (
-                  <p className="mt-1 break-words text-sm text-slate-600">
+                  <p
+                    className="mt-1 break-words text-slate-600"
+                    style={{
+                      fontSize: `${appearance.customer_details_size}pt`,
+                    }}
+                  >
                     {bill.customer_phone}
                   </p>
                 )}
 
                 {bill.customer_address && (
-                  <p className="mt-1 whitespace-pre-line break-words text-sm text-slate-600">
+                  <p
+                    className="mt-1 whitespace-pre-line break-words text-slate-600"
+                    style={{
+                      fontSize: `${appearance.customer_details_size}pt`,
+                    }}
+                  >
                     {bill.customer_address}
                   </p>
                 )}
               </div>
+
 
               <div className="grid shrink-0 grid-cols-[auto_auto] content-start gap-x-4 gap-y-2 text-sm sm:w-[240px]">
                 <span className="font-semibold text-slate-700">
@@ -506,9 +859,12 @@ function BillPreview({
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[520px] text-sm">
+            <table
+              className="w-full min-w-[520px]"
+              style={{ fontSize: `${appearance.table_text_size}pt` }}
+            >
               <thead className="bg-slate-800">
-                <tr className="text-left text-xs uppercase tracking-wide text-white">
+                <tr className="text-left uppercase tracking-wide text-white">
                   {invoiceColumns.map((column) => (
                     <th
                       key={column.key}
@@ -640,11 +996,26 @@ function BillPreview({
             {/* Authorized signature */}
             {signatureUrl && (
               <div className="mt-8 flex justify-end">
-                <div className="flex w-48 flex-col items-center">
+                <div
+                  className="flex flex-col items-center"
+                  style={{ width: `${appearance.signature_width_mm}mm` }}
+                >
                   <img
                     src={signatureUrl}
                     alt="Authorized signature"
-                    className="max-h-20 max-w-full object-contain"
+                    onError={() => {
+                      if (!signatureRetryAttempted) {
+                        setSignatureRetryAttempted(true);
+                        onRefreshAssets();
+                      }
+                    }}
+                    className="max-w-full object-contain"
+                    style={{
+                      width: `${appearance.signature_width_mm}mm`,
+                      height: `${appearance.signature_height_mm}mm`,
+                      maxWidth: "100%",
+                      objectFit: "contain",
+                    }}
                   />
 
                   <div className="mt-2 w-full border-t border-slate-400 pt-2 text-center">
