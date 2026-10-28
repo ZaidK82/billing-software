@@ -10,9 +10,12 @@ from fastapi import (
     UploadFile,
     status,
 )
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+
 
 from app.api.dependencies import get_current_user_id
 from app.core.config import settings
@@ -23,6 +26,7 @@ from app.services.storage import (
     delete_business_asset,
     upload_business_asset,
 )
+from app.services.inventory import reconcile_bill_inventory
 from app.models import (
     Bill,
     BillItem,
@@ -31,7 +35,8 @@ from app.models import (
     Customer,
     Product,
 )
-
+from app.models.product import Product
+from app.models.inventory_movement import InventoryMovement
 
 router = APIRouter()
 
@@ -113,8 +118,14 @@ class BusinessProfileUpdate(BaseModel):
 
 
 class BillItemCreate(BaseModel):
+    id: UUID | None = None
     item_name: str
-    quantity: int
+    product_id: UUID | None = None
+    quantity: Decimal = Field(
+        gt=0,
+        max_digits=14,
+        decimal_places=3,
+    )
     unit_price: Decimal
     line_total: Decimal | None = None
     custom_values: dict = {}
@@ -139,8 +150,9 @@ class BillItemResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
+    product_id: UUID | None = None
     item_name: str
-    quantity: int
+    quantity: Decimal
     unit_price: Decimal
     line_total: Decimal
     custom_values: dict
@@ -206,12 +218,13 @@ class ProductCreate(BaseModel):
     description: str | None = None
     default_unit_price: Decimal = Field(ge=0)
 
-
 class ProductUpdate(BaseModel):
     name: str = Field(min_length=1, max_length=150)
     description: str | None = None
     default_unit_price: Decimal = Field(ge=0)
 
+class ProductStockTrackingUpdate(BaseModel):
+    is_stock_tracked: bool
 
 class ProductResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -220,8 +233,58 @@ class ProductResponse(BaseModel):
     name: str
     description: str | None
     default_unit_price: Decimal
+    is_stock_tracked: bool
+    stock_quantity: Decimal | None
     created_at: object
     updated_at: object
+
+
+def validate_idempotency_key(value: str) -> str:
+    value = value.strip()
+    if not value:
+        raise ValueError("Idempotency key cannot be blank.")
+    return value
+
+
+class StockInitializeRequest(BaseModel):
+    opening_quantity: Decimal = Field(
+        ge=0,
+        max_digits=14,
+        decimal_places=3,
+    )
+    reason: str = Field(
+        min_length=1,
+        max_length=500,
+    )
+    idempotency_key: str = Field(
+        min_length=1,
+        max_length=200,
+    )
+
+    @field_validator("idempotency_key")
+    @classmethod
+    def validate_key(cls, value: str) -> str:
+        return validate_idempotency_key(value)
+
+
+class StockAdjustmentRequest(BaseModel):
+    quantity_delta: Decimal = Field(
+        max_digits=14,
+        decimal_places=3,
+    )
+    reason: str = Field(
+        min_length=1,
+        max_length=500,
+    )
+    idempotency_key: str = Field(
+        min_length=1,
+        max_length=200,
+    )
+
+    @field_validator("idempotency_key")
+    @classmethod
+    def validate_key(cls, value: str) -> str:
+        return validate_idempotency_key(value)
 
 
 def get_user_business(
@@ -250,6 +313,55 @@ def get_user_business(
 
     return business
 
+def validate_invoice_product_ids(
+    product_ids: set[UUID],
+    business_id: UUID,
+    db: Session,
+) -> None:
+    if not product_ids:
+        return
+
+    products = db.scalars(
+        select(Product).where(
+            Product.id.in_(product_ids),
+            Product.business_id == business_id,
+        )
+    ).all()
+
+    found_ids = {product.id for product in products}
+
+    if found_ids != product_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "One or more selected products are invalid "
+                "or do not belong to this business."
+            ),
+        )
+
+
+def find_idempotent_stock_movement(
+    db: Session,
+    business_id: UUID,
+    idempotency_key: str,
+) -> InventoryMovement | None:
+    return db.scalar(
+        select(InventoryMovement).where(
+            InventoryMovement.business_id == business_id,
+            InventoryMovement.idempotency_key == idempotency_key,
+        )
+    )
+
+
+def is_idempotency_constraint_error(exc: IntegrityError) -> bool:
+    original_error = getattr(exc, "orig", None)
+    diagnostic = getattr(original_error, "diag", None)
+    constraint_name = getattr(diagnostic, "constraint_name", None)
+
+    return (
+        constraint_name
+        == "uq_inventory_movement_business_idempotency_key"
+    )
 
 @router.get("/health")
 async def health_check():
@@ -562,6 +674,16 @@ async def create_bill(
 
     cleaned_items: list[dict] = []
 
+    validate_invoice_product_ids(
+        {
+            item.product_id
+            for item in bill_data.items
+            if item.product_id is not None
+        },
+        business.id,
+        db,
+    )
+
     for item in bill_data.items:
         item_name = item.item_name.strip()
 
@@ -571,10 +693,10 @@ async def create_bill(
                 detail="Every bill item must have a name.",
             )
 
-        if item.quantity <= 0:
+        if not item.quantity.is_finite() or item.quantity <= 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Item quantity must be greater than zero.",
+                detail="Item quantity must be a finite positive number.",
             )
 
         if item.unit_price < 0:
@@ -620,7 +742,9 @@ async def create_bill(
 
         cleaned_items.append(
             {
+                "id": item.id,
                 "item_name": item_name,
+                "product_id": item.product_id,
                 "quantity": item.quantity,
                 "unit_price": item.unit_price,
                 "line_total": line_total,
@@ -725,23 +849,40 @@ async def create_bill(
     db.add(bill)
     db.flush()
 
-    for item_data in cleaned_items:
-        bill_item = BillItem(
+    try:
+        reconcile_bill_inventory(
+            db=db,
+            business_id=business.id,
             bill_id=bill.id,
-            item_name=item_data["item_name"],
-            quantity=item_data["quantity"],
-            unit_price=item_data["unit_price"],
-            line_total=item_data["line_total"],
-            custom_values=item_data["custom_values"],
-            highlight_style=item_data["highlight_style"],
+            invoice_number=bill.invoice_number,
+            old_items=[],
+            new_items=cleaned_items,
         )
 
-        db.add(bill_item)
+        for item_data in cleaned_items:
+            bill_item = BillItem(
+                bill_id=bill.id,
+                product_id=item_data["product_id"],
+                inventory_tracking_applied=item_data[
+                    "inventory_tracking_applied"
+                ],
+                item_name=item_data["item_name"],
+                quantity=item_data["quantity"],
+                unit_price=item_data["unit_price"],
+                line_total=item_data["line_total"],
+                custom_values=item_data["custom_values"],
+                position=item_data["position"],
+                highlight_style=item_data["highlight_style"],
+            )
+            db.add(bill_item)
 
-    db.commit()
-    db.refresh(bill)
+        db.commit()
+        db.refresh(bill)
+        return bill
 
-    return bill
+    except Exception:
+        db.rollback()
+        raise
 
 @router.get(
     "/bills",
@@ -842,10 +983,12 @@ async def update_bill(
     business = get_user_business(user_id, db)
 
     bill = db.scalar(
-        select(Bill).where(
+        select(Bill)
+        .where(
             Bill.id == bill_id,
             Bill.business_id == business.id,
         )
+        .with_for_update()
     )
 
     if bill is None:
@@ -870,6 +1013,15 @@ async def update_bill(
 
     cleaned_items: list[dict] = []
 
+    validate_invoice_product_ids(
+        {
+            item.product_id
+            for item in bill_data.items
+            if item.product_id is not None
+        },
+        business.id,
+        db,
+    )
     for item in bill_data.items:
         item_name = item.item_name.strip()
 
@@ -879,10 +1031,10 @@ async def update_bill(
                 detail="Every bill item must have a name.",
             )
 
-        if item.quantity <= 0:
+        if not item.quantity.is_finite() or item.quantity <= 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Item quantity must be greater than zero.",
+                detail="Item quantity must be a finite positive number.",
             )
 
         if (
@@ -920,15 +1072,11 @@ async def update_bill(
             )
 
 
-        if line_total > Decimal("9999999999.99"):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Item amount exceeds the supported limit.",
-            )
-
         cleaned_items.append(
             {
+                "id": item.id,
                 "item_name": item_name,
+                "product_id": item.product_id,
                 "quantity": item.quantity,
                 "unit_price": item.unit_price,
                 "line_total": line_total,
@@ -952,6 +1100,38 @@ async def update_bill(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invoice total exceeds the supported limit.",
         )
+
+    old_items = [
+        {
+            "id": item.id,
+            "product_id": item.product_id,
+            "quantity": item.quantity,
+            "inventory_tracking_applied": item.inventory_tracking_applied,
+            "position": item.position,
+        }
+        for item in bill.items
+    ]
+
+    existing_items_by_id = {
+        item.id: item
+        for item in bill.items
+    }
+    submitted_ids = [
+        item["id"]
+        for item in cleaned_items
+        if item.get("id") is not None
+    ]
+    if len(submitted_ids) != len(set(submitted_ids)):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invoice item IDs must be unique.",
+        )
+
+    # Only IDs belonging to this invoice may identify existing rows.
+    # Unknown IDs represent new rows and will receive server-generated IDs.
+    for item_data in cleaned_items:
+        if item_data.get("id") not in existing_items_by_id:
+            item_data["id"] = None
 
     try:
         # Update editable fields on the existing invoice.
@@ -985,26 +1165,64 @@ async def update_bill(
             bill_data.appearance_settings.model_dump()
         )
 
-        bill.items.clear()
+        reconcile_bill_inventory(
+            db=db,
+            business_id=business.id,
+            bill_id=bill.id,
+            invoice_number=bill.invoice_number,
+            old_items=old_items,
+            new_items=cleaned_items,
+        )
 
+        replacement_items: list[BillItem] = []
         for item_data in cleaned_items:
-            bill.items.append(
-                BillItem(
-                    item_name=item_data["item_name"],
-                    quantity=item_data["quantity"],
-                    unit_price=item_data["unit_price"],
-                    line_total=item_data["line_total"],
-                    custom_values=item_data["custom_values"],
-                    position=item_data["position"],
-                    highlight_style=item_data["highlight_style"],
-                )
+            existing_item = (
+                existing_items_by_id.get(item_data["id"])
+                if item_data.get("id") is not None
+                else None
             )
+            if existing_item is not None:
+                existing_item.item_name = item_data["item_name"]
+                existing_item.product_id = item_data["product_id"]
+                existing_item.inventory_tracking_applied = item_data[
+                    "inventory_tracking_applied"
+                ]
+                existing_item.quantity = item_data["quantity"]
+                existing_item.unit_price = item_data["unit_price"]
+                existing_item.line_total = item_data["line_total"]
+                existing_item.custom_values = item_data["custom_values"]
+                existing_item.position = item_data["position"]
+                existing_item.highlight_style = item_data[
+                    "highlight_style"
+                ]
+                replacement_items.append(existing_item)
+            else:
+                replacement_items.append(
+                    BillItem(
+                        item_name=item_data["item_name"],
+                        product_id=item_data["product_id"],
+                        inventory_tracking_applied=item_data[
+                            "inventory_tracking_applied"
+                        ],
+                        quantity=item_data["quantity"],
+                        unit_price=item_data["unit_price"],
+                        line_total=item_data["line_total"],
+                        custom_values=item_data["custom_values"],
+                        position=item_data["position"],
+                        highlight_style=item_data["highlight_style"],
+                    )
+                )
+
+        bill.items[:] = replacement_items
 
         db.commit()
         db.refresh(bill)
 
         return bill
 
+    except HTTPException:
+        db.rollback()
+        raise
     except Exception as exc:
         db.rollback()
         raise HTTPException(
@@ -1025,10 +1243,12 @@ async def delete_bill(
     business = get_user_business(user_id, db)
 
     bill = db.scalar(
-        select(Bill).where(
+        select(Bill)
+        .where(
             Bill.id == bill_id,
             Bill.business_id == business.id,
         )
+        .with_for_update()
     )
 
     if bill is None:
@@ -1037,15 +1257,32 @@ async def delete_bill(
             detail="Bill not found.",
         )
 
+    old_items = [
+        {
+            "id": item.id,
+            "product_id": item.product_id,
+            "quantity": item.quantity,
+            "inventory_tracking_applied": item.inventory_tracking_applied,
+        }
+        for item in bill.items
+    ]
+
     try:
+        reconcile_bill_inventory(
+            db=db,
+            business_id=business.id,
+            bill_id=bill.id,
+            invoice_number=bill.invoice_number,
+            old_items=old_items,
+            new_items=[],
+        )
+
         db.delete(bill)
         db.commit()
-    except Exception as exc:
+
+    except Exception:
         db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Unable to delete bill.",
-        ) from exc
+        raise
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -1217,6 +1454,305 @@ async def get_product(
 
 
 @router.post(
+    "/products/{product_id}/stock/initialize",
+    response_model=ProductResponse,
+)
+async def initialize_product_stock(
+    product_id: UUID,
+    payload: StockInitializeRequest,
+    user_id: UUID = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    business = get_user_business(user_id, db)
+
+    try:
+        product = db.scalar(
+            select(Product)
+            .where(
+                Product.id == product_id,
+                Product.business_id == business.id,
+            )
+            .with_for_update()
+        )
+
+        if product is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Product not found.",
+            )
+
+
+        existing_movement = find_idempotent_stock_movement(
+            db=db,
+            business_id=business.id,
+            idempotency_key=payload.idempotency_key,
+        )
+
+        if existing_movement is not None:
+            if (
+                existing_movement.product_id != product.id
+                or existing_movement.movement_type != "opening"
+                or existing_movement.quantity_delta != payload.opening_quantity
+                or existing_movement.reason != payload.reason.strip()
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Idempotency key was already used for a different stock operation.",
+                )
+
+            db.commit()
+            db.refresh(product)
+            return product
+
+        if product.stock_quantity is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Opening stock has already been initialized.",
+            )
+
+
+        reason = payload.reason.strip()
+        if not reason:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="A reason is required for stock initialization.",
+            )
+
+        opening_quantity = payload.opening_quantity
+        product.stock_quantity = opening_quantity
+        product.is_stock_tracked = True
+
+
+        db.add(
+            InventoryMovement(
+                business_id=business.id,
+                product_id=product.id,
+                quantity_delta=opening_quantity,
+                stock_after=opening_quantity,
+                movement_type="opening",
+                reason=reason,
+                idempotency_key=payload.idempotency_key,
+            )
+        )
+
+        db.commit()
+        db.refresh(product)
+        return product
+
+    except IntegrityError as exc:
+        db.rollback()
+        if not is_idempotency_constraint_error(exc):
+            raise
+        existing_movement = find_idempotent_stock_movement(
+            db=db,
+            business_id=business.id,
+            idempotency_key=payload.idempotency_key,
+        )
+        if existing_movement is not None:
+            if (
+                existing_movement.product_id == product_id
+                and existing_movement.movement_type == "opening"
+                and existing_movement.quantity_delta == payload.opening_quantity
+                and existing_movement.reason == payload.reason.strip()
+            ):
+                product = db.scalar(
+                    select(Product).where(
+                        Product.id == product_id,
+                        Product.business_id == business.id,
+                    )
+                )
+                if product is not None:
+                    return product
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Idempotency key was already used for a different "
+                    "stock operation."
+                ),
+            )
+        raise
+    except Exception:
+        db.rollback()
+        raise
+
+
+@router.post(
+    "/products/{product_id}/stock/adjust",
+    response_model=ProductResponse,
+)
+async def adjust_product_stock(
+    product_id: UUID,
+    payload: StockAdjustmentRequest,
+    user_id: UUID = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    business = get_user_business(user_id, db)
+
+    try:
+        product = db.scalar(
+            select(Product)
+            .where(
+                Product.id == product_id,
+                Product.business_id == business.id,
+            )
+            .with_for_update()
+        )
+
+        if product is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Product not found.",
+            )
+
+        existing_movement = find_idempotent_stock_movement(
+            db=db,
+            business_id=business.id,
+            idempotency_key=payload.idempotency_key,
+        )
+
+        if existing_movement is not None:
+            if (
+                existing_movement.product_id != product.id
+                or existing_movement.movement_type != "adjustment"
+                or existing_movement.quantity_delta != payload.quantity_delta
+                or existing_movement.reason != payload.reason.strip()
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Idempotency key was already used for a different stock operation.",
+                )
+
+            db.commit()
+            db.refresh(product)
+            return product
+
+        if product.stock_quantity is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Opening stock must be initialized first.",
+            )
+
+        if not product.is_stock_tracked:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Stock tracking is not enabled for this product.",
+            )
+
+        quantity_delta = payload.quantity_delta
+        if not quantity_delta.is_finite() or quantity_delta == 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Stock adjustment must be a finite non-zero quantity.",
+            )
+
+        reason = payload.reason.strip()
+        if not reason:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="A reason is required for stock adjustment.",
+            )
+
+        stock_after = product.stock_quantity + quantity_delta
+        if stock_after < 0:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Stock adjustment cannot result in negative stock.",
+            )
+
+        product.stock_quantity = stock_after
+
+        db.add(
+            InventoryMovement(
+                business_id=business.id,
+                product_id=product.id,
+                quantity_delta=quantity_delta,
+                stock_after=stock_after,
+                movement_type="adjustment",
+                reason=reason,
+                idempotency_key=payload.idempotency_key,
+            )
+        )
+
+        db.commit()
+        db.refresh(product)
+        return product
+
+    except IntegrityError as exc:
+        db.rollback()
+        if not is_idempotency_constraint_error(exc):
+            raise
+        existing_movement = find_idempotent_stock_movement(
+            db=db,
+            business_id=business.id,
+            idempotency_key=payload.idempotency_key,
+        )
+        if existing_movement is not None:
+            if (
+                existing_movement.product_id == product_id
+                and existing_movement.movement_type == "adjustment"
+                and existing_movement.quantity_delta == payload.quantity_delta
+                and existing_movement.reason == payload.reason.strip()
+            ):
+                product = db.scalar(
+                    select(Product).where(
+                        Product.id == product_id,
+                        Product.business_id == business.id,
+                    )
+                )
+                if product is not None:
+                    return product
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Idempotency key was already used for a different "
+                    "stock operation."
+                ),
+            )
+        raise
+    except Exception:
+        db.rollback()
+        raise
+
+
+@router.get(
+    "/products/{product_id}/stock/movements",
+)
+async def get_product_stock_movements(
+    product_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    business = get_user_business(user_id, db)
+
+    product = db.scalar(
+        select(Product).where(
+            Product.id == product_id,
+            Product.business_id == business.id,
+        )
+    )
+
+    if product is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Product not found.",
+        )
+
+    movements = db.scalars(
+        select(InventoryMovement)
+        .where(
+            InventoryMovement.product_id == product.id,
+            InventoryMovement.business_id == business.id,
+        )
+        .order_by(
+            InventoryMovement.created_at.desc(),
+            InventoryMovement.id.desc(),
+        )
+    ).all()
+
+    return movements
+
+
+@router.post(
     "/products",
     response_model=ProductResponse,
     status_code=status.HTTP_201_CREATED,
@@ -1312,6 +1848,52 @@ async def update_product(
 
     return product
 
+@router.patch(
+    "/products/{product_id}/stock/tracking",
+    response_model=ProductResponse,
+)
+async def update_product_stock_tracking(
+    product_id: UUID,
+    payload: ProductStockTrackingUpdate,
+    user_id: UUID = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    business = get_user_business(user_id, db)
+
+    try:
+        product = db.scalar(
+            select(Product)
+            .where(
+                Product.id == product_id,
+                Product.business_id == business.id,
+            )
+            .with_for_update()
+        )
+
+        if product is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Product not found.",
+            )
+
+        if payload.is_stock_tracked and product.stock_quantity is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Initialize opening stock before enabling stock tracking.",
+            )
+
+        product.is_stock_tracked = payload.is_stock_tracked
+
+        db.commit()
+        db.refresh(product)
+        return product
+
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception:
+        db.rollback()
+        raise
 
 @router.delete(
     "/products/{product_id}",
@@ -1335,6 +1917,24 @@ async def delete_product(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Product not found.",
+        )
+
+    has_inventory_history = db.scalar(
+        select(InventoryMovement.id)
+        .where(
+            InventoryMovement.product_id == product.id,
+            InventoryMovement.business_id == business.id,
+        )
+        .limit(1)
+    )
+
+    if has_inventory_history is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "This product cannot be deleted because it has inventory "
+                "history. Disable or archive it instead."
+            ),
         )
 
     db.delete(product)

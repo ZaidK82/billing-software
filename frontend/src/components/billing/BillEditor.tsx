@@ -33,6 +33,7 @@ import type {
 
 type BillItem = {
   id: string;
+  product_id: string | null;
   item_name: string;
   quantity: number;
   unit_price: number;
@@ -111,6 +112,7 @@ const UNIT_OPTIONS = [
 function createItem(): BillItem {
   return {
     id: crypto.randomUUID(),
+    product_id: null,
     item_name: "",
     quantity: 1,
     unit_price: 0,
@@ -160,6 +162,7 @@ function BillEditor({
     initialBill
       ? initialBill.items.map((item) => ({
           id: item.id,
+          product_id: item.product_id ?? null,
           item_name: item.item_name,
           quantity: item.quantity,
           unit_price: Number(item.unit_price),
@@ -362,14 +365,15 @@ function BillEditor({
 
     setItems(
       parsedInvoice.items.map((item) => ({
-        id: crypto.randomUUID(),
-        item_name: item.item_name,
-        quantity: item.quantity,
-        unit_price: item.unit_price,
-        line_total: null,
-        custom_values: {},
-        highlight_style: null,
-      })),
+      id: crypto.randomUUID(),
+      product_id: null,
+      item_name: item.item_name,
+      quantity: item.quantity,
+      unit_price: item.unit_price,
+      line_total: null,
+      custom_values: {},
+      highlight_style: null,
+    })),
     );
 
     resetDraftItem();
@@ -429,10 +433,11 @@ function handleProductSelection(productId: string) {
           ) / 100
         : null;
 
-    return {
-      ...currentItem,
-      item_name: product.name,
-      unit_price:
+      return {
+        ...currentItem,
+        product_id: product.id,
+        item_name: product.name,
+        unit_price:
         priceEntryMode === "total" &&
         nextLineTotal !== null &&
         currentItem.quantity > 0
@@ -762,6 +767,8 @@ function removeItem(itemId: string) {
         invoice_columns: invoiceColumns,
         appearance_settings: DEFAULT_INVOICE_APPEARANCE,
         items: items.map((item, index) => ({
+          id: item.id,
+          product_id: item.product_id,
           item_name: item.item_name.trim(),
           quantity: item.quantity,
           unit_price: item.unit_price,

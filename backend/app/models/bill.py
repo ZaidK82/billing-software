@@ -11,6 +11,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    Boolean,
 )
 from sqlalchemy.dialects.postgresql import (
     JSONB,
@@ -142,6 +143,25 @@ class BillItem(Base):
         nullable=False,
     )
 
+    # Optional link to the catalogue product.
+    # Invoice snapshots remain valid if a product is later deleted.
+    product_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("products.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    # Records whether stock tracking was applied when this
+    # invoice line was saved. Preserves historical behavior
+    # if the product's tracking setting changes later.
+    inventory_tracking_applied: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+    )
+
     position: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
@@ -154,8 +174,8 @@ class BillItem(Base):
         nullable=False,
     )
 
-    quantity: Mapped[int] = mapped_column(
-        Integer,
+    quantity: Mapped[Decimal] = mapped_column(
+        Numeric(14, 3),
         nullable=False,
     )
 

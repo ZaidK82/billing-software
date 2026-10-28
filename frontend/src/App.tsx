@@ -42,12 +42,17 @@ import {
   deleteProduct,
   getProducts,
   updateProduct,
+  initializeProductStock,
+  adjustProductStock,
+  getProductStockMovements,
+  updateProductStockTracking,
   type BillListItem,
   type BusinessProfile,
   type Customer,
   type SavedBill,
   type Product,
   type CreateProductRequest,
+  type InventoryMovement,
 } from "./lib/api";
 
 import {
@@ -863,6 +868,119 @@ async function handleAssetLoadError() {
     setProductsLoadedAt(Date.now());
   }
 
+  async function handleInitializeProductStock(
+    product: Product,
+    openingQuantity: number,
+    reason: string,
+    idempotencyKey: string,
+  ): Promise<void> {
+    const session = await getSession();
+
+    if (!session?.access_token) {
+      throw new Error(
+        "Your session has expired. Please log in again.",
+      );
+    }
+
+    const updatedProduct = await initializeProductStock(
+      session.access_token,
+      product.id,
+      {
+        opening_quantity: openingQuantity,
+        reason,
+        idempotency_key: idempotencyKey,
+      },
+    );
+
+    setProducts((previous) =>
+      previous.map((item) =>
+        item.id === updatedProduct.id ? updatedProduct : item,
+      ),
+    );
+
+    setProductsLoadedAt(Date.now());
+    setProductsError(null);
+  }
+
+  async function handleAdjustProductStock(
+    product: Product,
+    quantityDelta: number,
+    reason: string,
+    idempotencyKey: string,
+  ): Promise<void> {
+    const session = await getSession();
+
+    if (!session?.access_token) {
+      throw new Error(
+        "Your session has expired. Please log in again.",
+      );
+    }
+
+    const updatedProduct = await adjustProductStock(
+      session.access_token,
+      product.id,
+      {
+        quantity_delta: quantityDelta,
+        reason,
+        idempotency_key: idempotencyKey,
+      },
+    );
+
+    setProducts((previous) =>
+      previous.map((item) =>
+        item.id === updatedProduct.id ? updatedProduct : item,
+      ),
+    );
+
+    setProductsLoadedAt(Date.now());
+    setProductsError(null);
+  }
+
+  async function handleLoadProductStockMovements(
+    product: Product,
+  ): Promise<InventoryMovement[]> {
+    const session = await getSession();
+
+    if (!session?.access_token) {
+      throw new Error(
+        "Your session has expired. Please log in again.",
+      );
+    }
+
+    return getProductStockMovements(
+      session.access_token,
+      product.id,
+    );
+  }
+
+  async function handleUpdateProductStockTracking(
+    product: Product,
+    isStockTracked: boolean,
+  ): Promise<void> {
+    const session = await getSession();
+
+    if (!session?.access_token) {
+      throw new Error(
+        "Your session has expired. Please log in again.",
+      );
+    }
+
+    const updatedProduct = await updateProductStockTracking(
+      session.access_token,
+      product.id,
+      isStockTracked,
+    );
+
+    setProducts((previous) =>
+      previous.map((item) =>
+        item.id === updatedProduct.id ? updatedProduct : item,
+      ),
+    );
+
+    setProductsLoadedAt(Date.now());
+    setProductsError(null);
+  }
+
 
   useEffect(() => {
     if (!currentUser || !business) {
@@ -1623,6 +1741,10 @@ async function handleAssetLoadError() {
                   navigate(`/products/${product.id}/edit`);
                 }}
                 onDeleteProduct={handleDeleteProduct}
+                onInitializeStock={handleInitializeProductStock}
+                onAdjustStock={handleAdjustProductStock}
+                onLoadStockMovements={handleLoadProductStockMovements}
+                onUpdateStockTracking={handleUpdateProductStockTracking}
                 onBack={() => {
                   navigate("/dashboard");
                 }}

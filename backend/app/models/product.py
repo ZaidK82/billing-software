@@ -3,7 +3,15 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, ForeignKey, Numeric, String, Text, func
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Numeric,
+    String,
+    Text,
+    func,
+)
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -39,6 +47,21 @@ class Product(Base):
     default_unit_price: Mapped[Decimal] = mapped_column(
         Numeric(12, 2),
         nullable=False,
+    )
+
+    # Inventory tracking is opt-in.
+    is_stock_tracked: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+    )
+
+    # NULL means opening stock has not been established.
+    # A numeric zero means stock has explicitly been established as zero.
+    stock_quantity: Mapped[Decimal | None] = mapped_column(
+        Numeric(14, 3),
+        nullable=True,
     )
 
     created_at: Mapped[datetime] = mapped_column(

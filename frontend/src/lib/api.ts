@@ -223,7 +223,9 @@ export async function getBusinessAssetUrl(
 }
 
 export type CreateBillItem = {
+  id?: string;
   item_name: string;
+  product_id?: string | null;
   quantity: number;
   unit_price: number;
   line_total?: number;
@@ -244,6 +246,7 @@ export type CreateBillRequest = {
 
 export type SavedBillItem = {
   id: string;
+  product_id: string | null;
   item_name: string;
   quantity: number;
   unit_price: string;
@@ -533,6 +536,8 @@ export type Product = {
   name: string;
   description: string | null;
   default_unit_price: string;
+  is_stock_tracked: boolean;
+  stock_quantity: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -666,4 +671,139 @@ export async function deleteProduct(
         `Product deletion failed: ${response.status}`,
     );
   }
+}
+
+export type InventoryMovement = {
+  id: string;
+  business_id: string;
+  product_id: string;
+  quantity_delta: string | number;
+  stock_after: string | number;
+  movement_type: string;
+  reason: string;
+  bill_id: string | null;
+  idempotency_key: string | null;
+  created_at: string;
+};
+
+export type InitializeStockRequest = {
+  opening_quantity: number;
+  reason: string;
+  idempotency_key: string;
+};
+
+export type AdjustStockRequest = {
+  quantity_delta: number;
+  reason: string;
+  idempotency_key: string;
+};
+
+export async function initializeProductStock(
+  accessToken: string,
+  productId: string,
+  payload: InitializeStockRequest,
+): Promise<Product> {
+  const response = await fetch(
+    `${API_URL}/products/${productId}/stock/initialize`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    },
+  );
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new Error(
+      body?.detail ||
+        `Stock initialization failed: ${response.status}`,
+    );
+  }
+
+  return response.json();
+}
+
+export async function adjustProductStock(
+  accessToken: string,
+  productId: string,
+  payload: AdjustStockRequest,
+): Promise<Product> {
+  const response = await fetch(
+    `${API_URL}/products/${productId}/stock/adjust`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    },
+  );
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new Error(
+      body?.detail ||
+        `Stock adjustment failed: ${response.status}`,
+    );
+  }
+
+  return response.json();
+}
+
+export async function getProductStockMovements(
+  accessToken: string,
+  productId: string,
+): Promise<InventoryMovement[]> {
+  const response = await fetch(
+    `${API_URL}/products/${productId}/stock/movements`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new Error(
+      body?.detail ||
+        `Stock movement history failed: ${response.status}`,
+    );
+  }
+
+  return response.json();
+}
+
+export async function updateProductStockTracking(
+  accessToken: string,
+  productId: string,
+  isStockTracked: boolean,
+): Promise<Product> {
+  const response = await fetch(
+    `${API_URL}/products/${productId}/stock/tracking`,
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        is_stock_tracked: isStockTracked,
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new Error(
+      body?.detail ||
+        `Stock tracking update failed: ${response.status}`,
+    );
+  }
+
+  return response.json();
 }
