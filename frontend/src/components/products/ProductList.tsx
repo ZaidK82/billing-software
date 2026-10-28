@@ -223,15 +223,29 @@ function ProductList({
 
       setStockProduct(null);
       setPendingStockRequest(null);
+
     } catch (err) {
-      setStockError(
+      const message =
         err instanceof Error
           ? err.message
-          : "Unable to update stock. Retry the same request.",
-      );
+          : "Unable to update stock. Retry the same request.";
+
+      setStockError(message);
+
+      // A definitive negative-stock rejection did not apply the
+      // adjustment. Allow the user to correct the quantity.
+      if (
+        request.action === "adjust" &&
+        /stock cannot become negative|insufficient stock|negative stock/i.test(
+          message,
+        )
+      ) {
+        setPendingStockRequest(null);
+      }
     } finally {
       setIsStockSaving(false);
     }
+
   }
 
   async function handleToggleStockTracking(product: Product) {
