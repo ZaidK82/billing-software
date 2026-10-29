@@ -1,4 +1,4 @@
-import {
+﻿import {
   useEffect,
   useMemo,
   useState,
@@ -40,6 +40,7 @@ type BillItem = {
   line_total: number | null;
   custom_values: Record<string, unknown>;
   highlight_style: string | null;
+  unit_name: string | null;
 };
 
 type BillEditorProps = {
@@ -119,6 +120,17 @@ function createItem(): BillItem {
     line_total: null,
     custom_values: {},
     highlight_style: null,
+    unit_name: null,
+  };
+}
+
+function syncInvoiceUnit(
+  customValues: Record<string, unknown>,
+  unitName: string,
+): Record<string, unknown> {
+  return {
+    ...customValues,
+    unit: unitName,
   };
 }
 
@@ -169,6 +181,7 @@ function BillEditor({
           line_total: Number(item.line_total),
           custom_values: { ...item.custom_values },
           highlight_style: item.highlight_style ?? null,
+          unit_name: item.unit_name ?? null,
         }))
       : [],
   );
@@ -373,6 +386,7 @@ function BillEditor({
       line_total: null,
       custom_values: {},
       highlight_style: null,
+      unit_name: null,
     })),
     );
 
@@ -423,6 +437,7 @@ function handleProductSelection(productId: string) {
     return;
   }
 
+  const unitName = product.base_unit;
   const unitPrice = Number(product.default_unit_price);
 
   setDraftItem((currentItem) => {
@@ -433,16 +448,69 @@ function handleProductSelection(productId: string) {
           ) / 100
         : null;
 
-      return {
-        ...currentItem,
-        product_id: product.id,
-        item_name: product.name,
-        unit_price:
+    return {
+      ...currentItem,
+      product_id: product.id,
+      item_name: product.name,
+      custom_values: syncInvoiceUnit(
+        currentItem.custom_values,
+        unitName,
+      ),
+      unit_price:
         priceEntryMode === "total" &&
         nextLineTotal !== null &&
         currentItem.quantity > 0
           ? nextLineTotal / currentItem.quantity
           : unitPrice,
+      line_total: nextLineTotal,
+      unit_name: unitName,
+    };
+  });
+}
+
+function handleSellingUnitChange(unitName: string) {
+  const product = products.find(
+    (item) => item.id === draftItem.product_id,
+  );
+
+  if (!product) {
+    return;
+  }
+
+  const selectedUnit = product.selling_units.find(
+    (unit) => unit.name === unitName,
+  );
+
+  if (!selectedUnit && unitName !== product.base_unit) {
+    return;
+  }
+
+  const factor = selectedUnit
+    ? Number(selectedUnit.factor)
+    : 1;
+
+  const suggestedPrice =
+    Number(product.default_unit_price) * factor;
+
+  setDraftItem((currentItem) => {
+    const nextLineTotal =
+      priceEntryMode === "total"
+        ? currentItem.line_total
+        : null;
+
+    return {
+      ...currentItem,
+      unit_name: unitName,
+      custom_values: syncInvoiceUnit(
+        currentItem.custom_values,
+        unitName,
+      ),
+      unit_price:
+        priceEntryMode === "total" &&
+        nextLineTotal !== null &&
+        currentItem.quantity > 0
+          ? nextLineTotal / currentItem.quantity
+          : suggestedPrice,
       line_total: nextLineTotal,
     };
   });
@@ -776,6 +844,7 @@ function removeItem(itemId: string) {
           custom_values: item.custom_values,
           position: index,
           highlight_style: item.highlight_style ?? null,
+          unit_name: item.product_id ? item.unit_name : null,
         })),
       };
 
@@ -812,7 +881,7 @@ function removeItem(itemId: string) {
               onClick={onCancel}
               className="mb-4 rounded-lg px-2 py-2 text-sm font-medium text-blue-600 transition hover:bg-blue-50 active:bg-blue-100"
             >
-              ← Dashboard
+              â† Dashboard
             </button>
 
             <p className="text-sm font-medium text-blue-600">
@@ -926,15 +995,15 @@ function removeItem(itemId: string) {
                               <td className="p-3">{item.item_name}</td>
                               <td className="p-3">{item.quantity}</td>
                               <td className="p-3">
-                                ₹{item.unit_price.toFixed(2)}
+                                â‚¹{item.unit_price.toFixed(2)}
                               </td>
                               <td className="p-3">
-                                ₹{(item.quantity * item.unit_price).toFixed(2)}
+                                â‚¹{(item.quantity * item.unit_price).toFixed(2)}
                               </td>
                               <td className="p-3">
                                 {item.stated_total === null
                                   ? "Not stated"
-                                  : `₹${item.stated_total.toFixed(2)}`}
+                                  : `â‚¹${item.stated_total.toFixed(2)}`}
                               </td>
                             </tr>
                           ))}
@@ -1026,7 +1095,7 @@ function removeItem(itemId: string) {
                       >
                         {customer.name}
                         {customer.phone
-                          ? ` — ${customer.phone}`
+                          ? ` â€” ${customer.phone}`
                           : ""}
                       </option>
                     ))}
@@ -1230,7 +1299,7 @@ function removeItem(itemId: string) {
 
                       {products.map((product) => (
                         <option key={product.id} value={product.id}>
-                          {product.name} — ₹
+                          {product.name} â€” â‚¹
                           {Number(product.default_unit_price).toFixed(2)}
                         </option>
                       ))}
@@ -1252,6 +1321,67 @@ function removeItem(itemId: string) {
                         </p>
                       )}
                   </div>
+
+                  {draftItem.product_id &&
+                    (() => {
+                      const selectedProduct = products.find(
+                        (product) => product.id === draftItem.product_id,
+                      );
+
+                      if (!selectedProduct) {
+                        return null;
+                      }
+
+                      const sellingUnits = [
+                        {
+                          name: selectedProduct.base_unit,
+                          factor: 1,
+                        },
+                        ...selectedProduct.selling_units.filter(
+                          (unit) => unit.name !== selectedProduct.base_unit,
+                        ),
+                      ];
+
+                      return (
+                        <div>
+                          <label
+                            htmlFor="draft-selling-unit"
+                            className="mb-1 block text-xs font-medium text-slate-600"
+                          >
+                            Selling Unit
+                          </label>
+
+                          <select
+                            id="draft-selling-unit"
+                            value={draftItem.unit_name ?? selectedProduct.base_unit}
+                            onChange={(event) =>
+                              handleSellingUnitChange(event.target.value)
+                            }
+                            disabled={saving}
+                            className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500 disabled:cursor-not-allowed disabled:bg-slate-50"
+                          >
+                            {sellingUnits.map((unit) => (
+                              <option key={unit.name} value={unit.name}>
+                                {unit.name} (Ã—{Number(unit.factor)})
+                              </option>
+                            ))}
+                          </select>
+
+                          <p className="mt-1 text-xs text-slate-500">
+                            One {draftItem.unit_name ?? selectedProduct.base_unit} =
+                            {" "}
+                            {Number(
+                              sellingUnits.find(
+                                (unit) =>
+                                  unit.name ===
+                                  (draftItem.unit_name ?? selectedProduct.base_unit),
+                              )?.factor ?? 1,
+                            )}{" "}
+                            {selectedProduct.base_unit}
+                          </p>
+                        </div>
+                      );
+                    })()}
 
                   {invoiceColumns.map((column) => (
                     <div key={column.key}>
@@ -1318,7 +1448,7 @@ function removeItem(itemId: string) {
                       ) : (
                         <div className="flex min-h-11 items-center rounded-lg bg-slate-100 px-3 py-2.5">
                           <span className="text-sm font-medium text-slate-700">
-                            ₹{draftItem.unit_price.toFixed(2)} per unit
+                            â‚¹{draftItem.unit_price.toFixed(2)} per unit
                           </span>
                         </div>
                       ))}
@@ -1341,7 +1471,7 @@ function removeItem(itemId: string) {
                       ) : (
                         <div className="flex min-h-11 items-center rounded-lg bg-white px-3 py-2.5">
                           <span className="text-sm font-semibold text-slate-900">
-                            ₹
+                            â‚¹
                             {(
                               draftItem.quantity * draftItem.unit_price
                             ).toFixed(2)}
@@ -1392,7 +1522,7 @@ function removeItem(itemId: string) {
                             className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"
                         />
                         )}
-                    
+
                       {column.source === "custom" &&
                         column.type !== "number" &&
                         column.type !== "date" &&
@@ -1400,7 +1530,8 @@ function removeItem(itemId: string) {
                           <select
                             id={`draft-item-${column.key}`}
                             value={String(
-                              draftItem.custom_values[column.key] ?? "",
+                              draftItem.custom_values[column.key] ??
+                                (draftItem.product_id ? draftItem.unit_name ?? "" : "")
                             )}
                             onChange={(event) =>
                               updateCustomValue(column.key, event.target.value)
@@ -1408,14 +1539,28 @@ function removeItem(itemId: string) {
                             disabled={saving}
                             className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500 disabled:cursor-not-allowed disabled:bg-slate-50"
                           >
-                            <option value="">Select unit</option>
-                            {UNIT_OPTIONS.filter((unit) => unit !== "OTHER").map((unit) => (
-                              <option key={unit} value={unit}>
-                                {unit}
+
+                          <option value="">Select unit</option>
+
+                          {draftItem.product_id &&
+                            draftItem.unit_name &&
+                            !UNIT_OPTIONS.some(
+                              (unit) => unit === draftItem.unit_name,
+                            ) && (
+                              <option value={draftItem.unit_name}>
+                                {draftItem.unit_name}
                               </option>
-                            ))}
-                            <option value="OTHER">Other</option>
-                          </select>
+                            )}
+
+                          {UNIT_OPTIONS.filter((unit) => unit !== "OTHER").map((unit) => (
+                            <option key={unit} value={unit}>
+                              {unit}
+                            </option>
+                          ))}
+
+                          <option value="OTHER">Other</option>
+                        </select>
+
                         )}
 
                       {column.source === "custom" &&
@@ -1501,7 +1646,7 @@ function removeItem(itemId: string) {
                                 className="rounded-lg px-2 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
                                 aria-label={`Move ${item.item_name || `item ${index + 1}`} up`}
                               >
-                                ↑
+                                â†‘
                               </button>
 
                               <button
@@ -1511,7 +1656,7 @@ function removeItem(itemId: string) {
                                 className="rounded-lg px-2 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
                                 aria-label={`Move ${item.item_name || `item ${index + 1}`} down`}
                               >
-                                ↓
+                                â†“
                               </button>
 
                               <button
@@ -1580,13 +1725,13 @@ function removeItem(itemId: string) {
                                     "unit_price"
                                 ) {
                                     value =
-                                    `₹${item.unit_price.toFixed(2)}`;
+                                    `â‚¹${item.unit_price.toFixed(2)}`;
                                 } else if (
                                     column.key ===
                                     "line_total"
                                 ) {
                                     value =
-                                    `₹${lineTotal.toFixed(2)}`;
+                                    `â‚¹${lineTotal.toFixed(2)}`;
                                 }
                                 } else {
                                 const customValue =
@@ -1598,7 +1743,7 @@ function removeItem(itemId: string) {
                                     customValue ===
                                     undefined ||
                                     customValue === null
-                                    ? "—"
+                                    ? "â€”"
                                     : String(
                                         customValue,
                                         );
@@ -1634,7 +1779,7 @@ function removeItem(itemId: string) {
                   <span>Subtotal</span>
 
                   <span className="font-medium">
-                    ₹{subtotal.toFixed(2)}
+                    â‚¹{subtotal.toFixed(2)}
                   </span>
                 </div>
 
@@ -1642,7 +1787,7 @@ function removeItem(itemId: string) {
                   <span>Total</span>
 
                   <span>
-                    ₹{total.toFixed(2)}
+                    â‚¹{total.toFixed(2)}
                   </span>
                 </div>
               </div>

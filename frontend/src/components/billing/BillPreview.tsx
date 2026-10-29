@@ -168,8 +168,9 @@ function BillPreview({
     }
 
     const value =
-      item.custom_values?.[column.key];
-
+      column.key === "unit" && item.unit_name
+        ? item.unit_name
+        : item.custom_values?.[column.key];
     if (
       value === undefined ||
       value === null ||
@@ -355,10 +356,12 @@ function BillPreview({
           ...appearance,
         },
         items: bill.items.map((item, index) => ({
+          product_id: item.product_id ?? null,
           item_name: item.item_name,
           quantity: item.quantity,
           unit_price: Number(item.unit_price),
           line_total: Number(item.line_total),
+          unit_name: item.unit_name ?? null,
           custom_values: item.custom_values,
           position: index,
           highlight_style: item.highlight_style ?? null,

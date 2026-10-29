@@ -380,7 +380,11 @@ def _get_item_column_value(
         getattr(item, "custom_values", None) or {}
     )
 
-    value = custom_values.get(key)
+    value = (
+        getattr(item, "unit_name", None)
+        if key == "unit" and getattr(item, "unit_name", None)
+        else custom_values.get(key)
+    )
 
     if value is None or str(value).strip() == "":
         return "—"

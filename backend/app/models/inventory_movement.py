@@ -54,6 +54,22 @@ class InventoryMovement(Base):
         nullable=False,
     )
 
+    # Optional audit snapshot of the quantity entered by the user.
+    entered_quantity: Mapped[Decimal | None] = mapped_column(
+        Numeric(14, 3),
+        nullable=True,
+    )
+
+    entered_unit: Mapped[str | None] = mapped_column(
+        String(30),
+        nullable=True,
+    )
+
+    conversion_factor: Mapped[Decimal | None] = mapped_column(
+        Numeric(14, 6),
+        nullable=True,
+    )
+
     # Balance immediately after this movement.
     stock_after: Mapped[Decimal] = mapped_column(
         Numeric(14, 3),

@@ -12,7 +12,7 @@ from sqlalchemy import (
     Text,
     func,
 )
-from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -47,6 +47,23 @@ class Product(Base):
     default_unit_price: Mapped[Decimal] = mapped_column(
         Numeric(12, 2),
         nullable=False,
+    )
+
+    # Canonical unit used for stock_quantity and inventory movements.
+    base_unit: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        default="unit",
+        server_default="unit",
+    )
+
+    # Alternative selling units, e.g. [{"name": "box", "factor": "12"}].
+    # Each factor represents how many base units make one selling unit.
+    selling_units: Mapped[list[dict]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list,
+        server_default="[]",
     )
 
     # Inventory tracking is opt-in.

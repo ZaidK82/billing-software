@@ -10,7 +10,13 @@ from fastapi import (
     UploadFile,
     status,
 )
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -121,6 +127,7 @@ class BillItemCreate(BaseModel):
     id: UUID | None = None
     item_name: str
     product_id: UUID | None = None
+    unit_name: str | None = Field(default=None, min_length=1, max_length=30)
     quantity: Decimal = Field(
         gt=0,
         max_digits=14,
@@ -153,6 +160,9 @@ class BillItemResponse(BaseModel):
     product_id: UUID | None = None
     item_name: str
     quantity: Decimal
+    unit_name: str | None = None
+    conversion_factor: Decimal | None = None
+    base_quantity: Decimal | None = None
     unit_price: Decimal
     line_total: Decimal
     custom_values: dict
@@ -213,15 +223,90 @@ class CustomerResponse(BaseModel):
     updated_at: object
 
 
+class SellingUnitInput(BaseModel):
+    name: str = Field(min_length=1, max_length=30)
+    factor: Decimal = Field(gt=0, max_digits=14, decimal_places=6)
+
+    @field_validator("name")
+    @classmethod
+    def clean_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Unit name cannot be blank.")
+        return value
+
+    @field_validator("factor")
+    @classmethod
+    def validate_factor(cls, value: Decimal) -> Decimal:
+        if not value.is_finite() or value <= 0:
+            raise ValueError("Conversion factor must be finite and positive.")
+        return value
+
+
+def validate_unit_names(base_unit: str, selling_units: list[SellingUnitInput]) -> None:
+    normalized_base = base_unit.strip()
+    if not normalized_base:
+        raise ValueError("Base unit cannot be blank.")
+
+    seen = {normalized_base.casefold()}
+    for unit in selling_units:
+        normalized_name = unit.name.strip()
+        if not normalized_name:
+            raise ValueError("Unit name cannot be blank.")
+        if normalized_name.casefold() in seen:
+            raise ValueError("Unit names must be unique and cannot match the base unit.")
+        seen.add(normalized_name.casefold())
+
+
 class ProductCreate(BaseModel):
     name: str = Field(min_length=1, max_length=150)
     description: str | None = None
     default_unit_price: Decimal = Field(ge=0)
+    base_unit: str = Field(default="unit", min_length=1, max_length=30)
+    selling_units: list[SellingUnitInput] = Field(default_factory=list)
+
+    @field_validator("base_unit")
+    @classmethod
+    def clean_base_unit(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Base unit cannot be blank.")
+        return value
+
+    @model_validator(mode="after")
+    def validate_unit_configuration(self):
+        validate_unit_names(self.base_unit, self.selling_units)
+        return self
+
 
 class ProductUpdate(BaseModel):
     name: str = Field(min_length=1, max_length=150)
     description: str | None = None
     default_unit_price: Decimal = Field(ge=0)
+    base_unit: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=30,
+    )
+    selling_units: list[SellingUnitInput] | None = None
+
+    @field_validator("base_unit")
+    @classmethod
+    def clean_base_unit(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+
+        value = value.strip()
+        if not value:
+            raise ValueError("Base unit cannot be blank.")
+        return value
+
+    @model_validator(mode="after")
+    def validate_unit_configuration(self):
+        if self.base_unit is not None and self.selling_units is not None:
+            validate_unit_names(self.base_unit, self.selling_units)
+
+        return self
 
 class ProductStockTrackingUpdate(BaseModel):
     is_stock_tracked: bool
@@ -233,6 +318,8 @@ class ProductResponse(BaseModel):
     name: str
     description: str | None
     default_unit_price: Decimal
+    base_unit: str = "unit"
+    selling_units: list[dict] = Field(default_factory=list)
     is_stock_tracked: bool
     stock_quantity: Decimal | None
     created_at: object
@@ -260,6 +347,7 @@ class StockInitializeRequest(BaseModel):
         min_length=1,
         max_length=200,
     )
+    unit_name: str | None = Field(default=None, min_length=1, max_length=30)
 
     @field_validator("idempotency_key")
     @classmethod
@@ -280,6 +368,7 @@ class StockAdjustmentRequest(BaseModel):
         min_length=1,
         max_length=200,
     )
+    unit_name: str | None = Field(default=None, min_length=1, max_length=30)
 
     @field_validator("idempotency_key")
     @classmethod
@@ -340,6 +429,211 @@ def validate_invoice_product_ids(
         )
 
 
+STANDARD_UNIT_CATEGORIES = {
+    "PCS": "count",
+    "SET": "count",
+    "PAIR": "count",
+    "DOZEN": "count",
+    "BOX": "count",
+    "PACK": "count",
+    "KG": "weight",
+    "G": "weight",
+    "MG": "weight",
+    "TONNE": "weight",
+    "LTR": "volume",
+    "ML": "volume",
+    "KL": "volume",
+    "MTR": "length",
+    "CM": "length",
+    "MM": "length",
+    "KM": "length",
+    "SQ FT": "area",
+    "SQ M": "area",
+    "SQ YD": "area",
+    "ROLL": "count",
+    "UNIT": "count",
+}
+
+
+def validate_unit_compatibility(
+    base_unit: str,
+    selling_units: list["SellingUnitInput"],
+) -> None:
+    base_normalized = base_unit.strip().upper()
+    base_category = STANDARD_UNIT_CATEGORIES.get(base_normalized)
+
+    for unit in selling_units:
+        selling_normalized = unit.name.strip().upper()
+        selling_category = STANDARD_UNIT_CATEGORIES.get(selling_normalized)
+
+        # Custom units remain supported because their physical
+        # measurement category cannot be inferred from their name.
+        if base_category is None or selling_category is None:
+            continue
+
+        if base_category != selling_category:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Selling unit '{unit.name}' is incompatible with "
+                    f"base unit '{base_unit}'. Choose a unit from the "
+                    "same measurement category."
+                ),
+            )
+
+
+def normalize_unit_name(value: str) -> str:
+    normalized = value.strip()
+    if not normalized:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unit names cannot be blank.",
+        )
+    if len(normalized) > 30:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unit names cannot exceed 30 characters.",
+        )
+    return normalized
+
+
+def validate_selling_units(
+    base_unit: str,
+    selling_units: list[SellingUnitInput],
+) -> tuple[str, list[dict]]:
+    normalized_base = normalize_unit_name(base_unit)
+    seen = {normalized_base.casefold()}
+    normalized_units: list[dict] = []
+
+    for unit in selling_units:
+        name = normalize_unit_name(unit.name)
+        if name.casefold() in seen:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Selling unit names must be unique and distinct from the base unit.",
+            )
+        factor = unit.factor
+        if not factor.is_finite() or factor <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Conversion factors must be finite and positive.",
+            )
+        seen.add(name.casefold())
+        normalized_units.append({
+            "name": name,
+            "factor": format(factor, "f"),
+        })
+
+    validate_unit_compatibility(normalized_base, selling_units)
+
+    return normalized_base, normalized_units
+
+
+def resolve_product_unit(
+    product: Product,
+    requested_unit: str | None,
+) -> tuple[str, Decimal]:
+    """Resolve a selling unit against the current product configuration."""
+    base_unit = normalize_unit_name(product.base_unit or "unit")
+    unit_name = (
+        normalize_unit_name(requested_unit)
+        if requested_unit is not None
+        else base_unit
+    )
+    if unit_name.casefold() == base_unit.casefold():
+        return base_unit, Decimal("1")
+
+    for configured in product.selling_units or []:
+        configured_name = str(configured.get("name", "")).strip()
+        if configured_name.casefold() != unit_name.casefold():
+            continue
+        try:
+            factor = Decimal(str(configured["factor"]))
+        except (KeyError, ValueError, TypeError):
+            break
+        if not factor.is_finite() or factor <= 0:
+            break
+        return configured_name, factor
+
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail=(
+            f"Unit '{unit_name}' is not configured for product "
+            f"'{product.name}'."
+        ),
+    )
+
+def to_base_stock_quantity(
+    entered_quantity: Decimal,
+    conversion_factor: Decimal,
+) -> Decimal:
+    """Convert an entered quantity to stock precision without silent rounding."""
+    raw_quantity = entered_quantity * conversion_factor
+
+    if not raw_quantity.is_finite():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Converted stock quantity must be finite.",
+        )
+
+    normalized = raw_quantity.quantize(Decimal("0.001"))
+
+    if normalized != raw_quantity:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Converted quantity exceeds the supported precision "
+                "of three decimal places in the base unit."
+            ),
+        )
+
+    return normalized
+
+def resolve_invoice_item_unit(
+    item: BillItemCreate,
+    db: Session,
+) -> tuple[str | None, Decimal, Decimal]:
+    """Return saved unit name, conversion factor and base quantity."""
+    if item.product_id is None:
+        return None, Decimal("1"), item.quantity
+
+    product = db.get(Product, item.product_id)
+    if product is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Selected product was not found.",
+        )
+
+    unit_name, factor = resolve_product_unit(product, item.unit_name)
+    raw_base_quantity = item.quantity * factor
+    if (
+        not raw_base_quantity.is_finite()
+        or raw_base_quantity > Decimal("99999999999.999")
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Converted quantity exceeds the supported stock quantity.",
+        )
+    base_quantity = raw_base_quantity.quantize(Decimal("0.001"))
+
+    if base_quantity != raw_base_quantity:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Converted quantity exceeds the supported precision "
+                "of three decimal places in the base unit."
+            ),
+        )
+
+    if base_quantity <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Converted quantity is below the supported stock precision.",
+        )
+
+    return unit_name, factor, base_quantity
+
+
 def find_idempotent_stock_movement(
     db: Session,
     business_id: UUID,
@@ -354,6 +648,7 @@ def find_idempotent_stock_movement(
 
 
 def is_idempotency_constraint_error(exc: IntegrityError) -> bool:
+
     original_error = getattr(exc, "orig", None)
     diagnostic = getattr(original_error, "diag", None)
     constraint_name = getattr(diagnostic, "constraint_name", None)
@@ -739,12 +1034,18 @@ async def create_bill(
                 detail="Item amount exceeds the supported limit.",
             )
 
+        unit_name, conversion_factor, base_quantity = (
+            resolve_invoice_item_unit(item, db)
+        )
 
         cleaned_items.append(
             {
                 "id": item.id,
                 "item_name": item_name,
                 "product_id": item.product_id,
+                "unit_name": unit_name,
+                "conversion_factor": conversion_factor,
+                "base_quantity": base_quantity,
                 "quantity": item.quantity,
                 "unit_price": item.unit_price,
                 "line_total": line_total,
@@ -868,6 +1169,9 @@ async def create_bill(
                 ],
                 item_name=item_data["item_name"],
                 quantity=item_data["quantity"],
+                unit_name=item_data["unit_name"],
+                conversion_factor=item_data["conversion_factor"],
+                base_quantity=item_data["base_quantity"],
                 unit_price=item_data["unit_price"],
                 line_total=item_data["line_total"],
                 custom_values=item_data["custom_values"],
@@ -1071,12 +1375,18 @@ async def update_bill(
                 detail="Item amount exceeds the supported limit.",
             )
 
+        unit_name, conversion_factor, base_quantity = (
+            resolve_invoice_item_unit(item, db)
+        )
 
         cleaned_items.append(
             {
                 "id": item.id,
                 "item_name": item_name,
                 "product_id": item.product_id,
+                "unit_name": unit_name,
+                "conversion_factor": conversion_factor,
+                "base_quantity": base_quantity,
                 "quantity": item.quantity,
                 "unit_price": item.unit_price,
                 "line_total": line_total,
@@ -1188,6 +1498,11 @@ async def update_bill(
                     "inventory_tracking_applied"
                 ]
                 existing_item.quantity = item_data["quantity"]
+                existing_item.unit_name = item_data["unit_name"]
+                existing_item.conversion_factor = item_data[
+                    "conversion_factor"
+                ]
+                existing_item.base_quantity = item_data["base_quantity"]
                 existing_item.unit_price = item_data["unit_price"]
                 existing_item.line_total = item_data["line_total"]
                 existing_item.custom_values = item_data["custom_values"]
@@ -1205,6 +1520,9 @@ async def update_bill(
                             "inventory_tracking_applied"
                         ],
                         quantity=item_data["quantity"],
+                        unit_name=item_data["unit_name"],
+                        conversion_factor=item_data["conversion_factor"],
+                        base_quantity=item_data["base_quantity"],
                         unit_price=item_data["unit_price"],
                         line_total=item_data["line_total"],
                         custom_values=item_data["custom_values"],
@@ -1481,6 +1799,11 @@ async def initialize_product_stock(
                 detail="Product not found.",
             )
 
+        unit_name, factor = resolve_product_unit(product, payload.unit_name)
+        opening_quantity = to_base_stock_quantity(
+            payload.opening_quantity,
+            factor,
+        )
 
         existing_movement = find_idempotent_stock_movement(
             db=db,
@@ -1492,7 +1815,10 @@ async def initialize_product_stock(
             if (
                 existing_movement.product_id != product.id
                 or existing_movement.movement_type != "opening"
-                or existing_movement.quantity_delta != payload.opening_quantity
+                or existing_movement.quantity_delta != opening_quantity
+                or existing_movement.entered_quantity != payload.opening_quantity
+                or existing_movement.entered_unit != unit_name
+                or existing_movement.conversion_factor != factor
                 or existing_movement.reason != payload.reason.strip()
             ):
                 raise HTTPException(
@@ -1518,7 +1844,6 @@ async def initialize_product_stock(
                 detail="A reason is required for stock initialization.",
             )
 
-        opening_quantity = payload.opening_quantity
         product.stock_quantity = opening_quantity
         product.is_stock_tracked = True
 
@@ -1532,6 +1857,9 @@ async def initialize_product_stock(
                 movement_type="opening",
                 reason=reason,
                 idempotency_key=payload.idempotency_key,
+                entered_quantity=payload.opening_quantity,
+                entered_unit=unit_name,
+                conversion_factor=factor,
             )
         )
 
@@ -1549,20 +1877,36 @@ async def initialize_product_stock(
             idempotency_key=payload.idempotency_key,
         )
         if existing_movement is not None:
+            retry_product = db.scalar(
+                select(Product).where(
+                    Product.id == product_id,
+                    Product.business_id == business.id,
+                )
+            )
+            if retry_product is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Product not found.",
+                )
+
+            retry_unit_name, retry_factor = resolve_product_unit(
+                retry_product,
+                payload.unit_name,
+            )
+            retry_opening_quantity = to_base_stock_quantity(
+                payload.opening_quantity,
+                retry_factor,
+            )
             if (
                 existing_movement.product_id == product_id
                 and existing_movement.movement_type == "opening"
-                and existing_movement.quantity_delta == payload.opening_quantity
+                and existing_movement.quantity_delta == retry_opening_quantity
+                and existing_movement.entered_quantity == payload.opening_quantity
+                and existing_movement.entered_unit == retry_unit_name
+                and existing_movement.conversion_factor == retry_factor
                 and existing_movement.reason == payload.reason.strip()
             ):
-                product = db.scalar(
-                    select(Product).where(
-                        Product.id == product_id,
-                        Product.business_id == business.id,
-                    )
-                )
-                if product is not None:
-                    return product
+                return retry_product
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
@@ -1604,6 +1948,13 @@ async def adjust_product_stock(
                 detail="Product not found.",
             )
 
+        unit_name, factor = resolve_product_unit(product, payload.unit_name)
+
+        quantity_delta = to_base_stock_quantity(
+            payload.quantity_delta,
+            factor,
+        )
+
         existing_movement = find_idempotent_stock_movement(
             db=db,
             business_id=business.id,
@@ -1614,7 +1965,10 @@ async def adjust_product_stock(
             if (
                 existing_movement.product_id != product.id
                 or existing_movement.movement_type != "adjustment"
-                or existing_movement.quantity_delta != payload.quantity_delta
+                or existing_movement.quantity_delta != quantity_delta
+                or existing_movement.entered_quantity != payload.quantity_delta
+                or existing_movement.entered_unit != unit_name
+                or existing_movement.conversion_factor != factor
                 or existing_movement.reason != payload.reason.strip()
             ):
                 raise HTTPException(
@@ -1638,7 +1992,6 @@ async def adjust_product_stock(
                 detail="Stock tracking is not enabled for this product.",
             )
 
-        quantity_delta = payload.quantity_delta
         if not quantity_delta.is_finite() or quantity_delta == 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -1670,6 +2023,9 @@ async def adjust_product_stock(
                 movement_type="adjustment",
                 reason=reason,
                 idempotency_key=payload.idempotency_key,
+                entered_quantity=payload.quantity_delta,
+                entered_unit=unit_name,
+                conversion_factor=factor,
             )
         )
 
@@ -1687,20 +2043,36 @@ async def adjust_product_stock(
             idempotency_key=payload.idempotency_key,
         )
         if existing_movement is not None:
+            retry_product = db.scalar(
+                select(Product).where(
+                    Product.id == product_id,
+                    Product.business_id == business.id,
+                )
+            )
+            if retry_product is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Product not found.",
+                )
+
+            retry_unit_name, retry_factor = resolve_product_unit(
+                retry_product,
+                payload.unit_name,
+            )
+            retry_quantity_delta = to_base_stock_quantity(
+                payload.quantity_delta,
+                retry_factor,
+            )
             if (
                 existing_movement.product_id == product_id
                 and existing_movement.movement_type == "adjustment"
-                and existing_movement.quantity_delta == payload.quantity_delta
+                and existing_movement.quantity_delta == retry_quantity_delta
+                and existing_movement.entered_quantity == payload.quantity_delta
+                and existing_movement.entered_unit == retry_unit_name
+                and existing_movement.conversion_factor == retry_factor
                 and existing_movement.reason == payload.reason.strip()
             ):
-                product = db.scalar(
-                    select(Product).where(
-                        Product.id == product_id,
-                        Product.business_id == business.id,
-                    )
-                )
-                if product is not None:
-                    return product
+                return retry_product
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
@@ -1783,11 +2155,17 @@ async def create_product(
             detail="Product price must be a valid amount.",
         )
 
+    base_unit, selling_units = validate_selling_units(
+        payload.base_unit,
+        payload.selling_units,
+    )
     product = Product(
         business_id=business.id,
         name=name,
         description=description,
         default_unit_price=payload.default_unit_price,
+        base_unit=base_unit,
+        selling_units=selling_units,
     )
 
     db.add(product)
@@ -1835,6 +2213,43 @@ async def update_product(
             detail="Product price must be a valid amount.",
         )
 
+    requested_base_unit = (
+        payload.base_unit
+        if payload.base_unit is not None
+        else (product.base_unit or "unit")
+    )
+
+    requested_selling_units = (
+        payload.selling_units
+        if payload.selling_units is not None
+        else [
+            SellingUnitInput(
+                name=str(unit["name"]),
+                factor=Decimal(str(unit["factor"])),
+            )
+            for unit in (product.selling_units or [])
+        ]
+    )
+
+    base_unit, selling_units = validate_selling_units(
+        requested_base_unit,
+        requested_selling_units,
+    )
+    if base_unit.casefold() != (product.base_unit or "unit").casefold():
+        has_movement = db.scalar(
+            select(InventoryMovement.id)
+            .where(InventoryMovement.product_id == product.id)
+            .limit(1)
+        )
+        if product.stock_quantity is not None or has_movement is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "The base unit cannot be changed after stock is "
+                    "initialized or inventory history exists."
+                ),
+            )
+
     product.name = name
     product.description = (
         payload.description.strip()
@@ -1842,6 +2257,8 @@ async def update_product(
         else None
     )
     product.default_unit_price = payload.default_unit_price
+    product.base_unit = base_unit
+    product.selling_units = selling_units
 
     db.commit()
     db.refresh(product)

@@ -226,6 +226,7 @@ export type CreateBillItem = {
   id?: string;
   item_name: string;
   product_id?: string | null;
+  unit_name?: string | null;
   quantity: number;
   unit_price: number;
   line_total?: number;
@@ -249,6 +250,9 @@ export type SavedBillItem = {
   product_id: string | null;
   item_name: string;
   quantity: number;
+  unit_name: string | null;
+  conversion_factor: string | null;
+  base_quantity: string | null;
   unit_price: string;
   line_total: string;
   custom_values: Record<string, unknown>;
@@ -530,12 +534,18 @@ export async function updateCustomer(
   return response.json();
 }
 
+export type SellingUnit = {
+  name: string;
+  factor: number | string;
+};
 
 export type Product = {
   id: string;
   name: string;
   description: string | null;
   default_unit_price: string;
+  base_unit: string;
+  selling_units: SellingUnit[];
   is_stock_tracked: boolean;
   stock_quantity: string | null;
   created_at: string;
@@ -546,10 +556,11 @@ export type CreateProductRequest = {
   name: string;
   description: string | null;
   default_unit_price: number;
+  base_unit: string;
+  selling_units: SellingUnit[];
 };
 
 export type UpdateProductRequest = CreateProductRequest;
-
 
 export async function getProducts(
   accessToken: string,
@@ -683,6 +694,9 @@ export type InventoryMovement = {
   reason: string;
   bill_id: string | null;
   idempotency_key: string | null;
+  entered_quantity: string | number | null;
+  entered_unit: string | null;
+  conversion_factor: string | number | null;
   created_at: string;
 };
 
@@ -690,12 +704,14 @@ export type InitializeStockRequest = {
   opening_quantity: number;
   reason: string;
   idempotency_key: string;
+  unit_name?: string | null;
 };
 
 export type AdjustStockRequest = {
   quantity_delta: number;
   reason: string;
   idempotency_key: string;
+  unit_name?: string | null;
 };
 
 export async function initializeProductStock(

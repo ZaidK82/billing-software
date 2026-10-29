@@ -605,6 +605,19 @@ function ProductList({
                         {Number(product.default_unit_price).toFixed(2)}
                       </p>
 
+                      <p className="mt-1 text-sm text-slate-600">
+                        Base unit: <span className="font-medium">{product.base_unit}</span>
+                      </p>
+
+                      {product.selling_units.length > 0 && (
+                        <p className="mt-1 text-sm text-slate-600">
+                          Selling units:{" "}
+                          {product.selling_units
+                            .map((unit) => `${unit.name} (${unit.factor} ${product.base_unit})`)
+                            .join(", ")}
+                        </p>
+                      )}
+
                       <div className="mt-3 space-y-1 text-sm">
                         <p className="text-slate-700">
                           Stock tracking:{" "}
@@ -617,8 +630,8 @@ function ProductList({
                           Stock balance:{" "}
                           <span className="font-semibold">
                             {initialized
-                              ? formatQuantity(product.stock_quantity!)
-                              : "Not initialized"}
+                            ? `${formatQuantity(product.stock_quantity!)} ${product.base_unit}`
+                            : "Not initialized"}
                           </span>
                         </p>
 

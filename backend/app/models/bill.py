@@ -179,6 +179,23 @@ class BillItem(Base):
         nullable=False,
     )
 
+    # Historical selling-unit snapshot. NULL means a legacy invoice line.
+    unit_name: Mapped[str | None] = mapped_column(
+        String(30),
+        nullable=True,
+    )
+
+    conversion_factor: Mapped[Decimal | None] = mapped_column(
+        Numeric(14, 6),
+        nullable=True,
+    )
+
+    # Quantity normalized to the product's canonical stock unit.
+    base_quantity: Mapped[Decimal | None] = mapped_column(
+        Numeric(14, 3),
+        nullable=True,
+    )
+
     unit_price: Mapped[Decimal] = mapped_column(
         Numeric(12, 2),
         nullable=False,

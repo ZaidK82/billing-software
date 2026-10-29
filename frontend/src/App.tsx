@@ -746,6 +746,8 @@ async function handleAssetLoadError() {
       name: string;
       description: string;
       default_unit_price: string;
+      base_unit: string;
+      selling_units: Product["selling_units"];
     },
   ) {
     setIsProductSaving(true);
@@ -764,6 +766,8 @@ async function handleAssetLoadError() {
         name: values.name.trim(),
         description: values.description.trim() || null,
         default_unit_price: Number(values.default_unit_price),
+        base_unit: values.base_unit.trim(),
+        selling_units: values.selling_units,
       };
 
       const createdProduct = await createProduct(
@@ -796,6 +800,8 @@ async function handleAssetLoadError() {
       name: string;
       description: string;
       default_unit_price: string;
+      base_unit: string;
+      selling_units: Product["selling_units"];
     },
   ) {
     if (!editingProduct) {
@@ -818,6 +824,8 @@ async function handleAssetLoadError() {
         name: values.name.trim(),
         description: values.description.trim() || null,
         default_unit_price: Number(values.default_unit_price),
+        base_unit: values.base_unit.trim(),
+        selling_units: values.selling_units,
       };
 
       const updatedProduct = await updateProduct(

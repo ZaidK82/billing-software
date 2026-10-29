@@ -12,6 +12,20 @@ from app.models.product import Product
 
 ZERO = Decimal("0")
 
+def get_inventory_quantity(item: dict) -> Decimal:
+    """Return base-unit quantity, falling back for legacy invoice items."""
+    raw_quantity = item.get("base_quantity")
+    quantity = Decimal(
+        str(item["quantity"] if raw_quantity is None else raw_quantity)
+    )
+
+    if not quantity.is_finite() or quantity <= ZERO:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Inventory quantities must be finite and positive.",
+        )
+
+    return quantity
 
 def validate_inventory_ledger_balance(
     db: Session,
@@ -104,12 +118,7 @@ def reconcile_bill_inventory(
         if product_id is None:
             continue
 
-        quantity = Decimal(str(item["quantity"]))
-        if not quantity.is_finite() or quantity <= ZERO:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Inventory quantities must be finite and positive.",
-            )
+        get_inventory_quantity(item)
 
         new_product_ids.add(product_id)
 
@@ -248,11 +257,11 @@ def reconcile_bill_inventory(
                 ),
             )
 
-        quantity = Decimal(str(item["quantity"]))
+        quantity = get_inventory_quantity(item)
+
         new_quantities[product_id] = (
             new_quantities.get(product_id, ZERO) + quantity
         )
-
     # Check every replacement deduction before modifying any balances.
     for product_id, quantity in new_quantities.items():
         available = projected_balances[product_id]
