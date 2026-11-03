@@ -6,6 +6,7 @@ type AppNavbarProps = {
   onCreateBill: () => void;
   onBills: () => void;
   onCustomers: () => void;
+  onReports: () => void;
   onBusinessProfile: () => void;
   onLogout: () => void;
 };
@@ -16,6 +17,7 @@ function AppNavbar({
   onCreateBill,
   onBills,
   onCustomers,
+  onReports,
   onBusinessProfile,
   onLogout,
 }: AppNavbarProps) {
@@ -77,6 +79,14 @@ function AppNavbar({
             className={desktopButtonClass}
           >
             Customers
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleNavigation(onReports)}
+            className={desktopButtonClass}
+          >
+            Reports
           </button>
 
           <button
@@ -157,6 +167,14 @@ function AppNavbar({
                 className="flex min-h-11 w-full items-center rounded-xl px-4 py-3 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-100 active:bg-slate-200"
               >
                 Customers
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleNavigation(onReports)}
+                className="flex min-h-11 w-full items-center rounded-xl px-4 py-3 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-100 active:bg-slate-200"
+              >
+                Reports
               </button>
 
               <button

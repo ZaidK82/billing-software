@@ -24,6 +24,10 @@ import AppNavbar from "./components/navigation/AppNavbar";
 import BusinessProfilePage from "./components/business/BusinessProfile";
 import ProductList from "./components/products/ProductList";
 import ProductForm from "./components/products/ProductForm";
+import SalesReport from "./components/reports/SalesReport";
+import InventoryReport from "./components/reports/InventoryReport";
+import CustomerReport from "./components/reports/CustomerReport";
+import ProfitabilityReport from "./components/reports/ProfitabilityReport";
 
 import {
   createBusiness,
@@ -1290,6 +1294,9 @@ async function handleAssetLoadError() {
         onCustomers={() => {
           navigate("/customers");
         }}
+        onReports={() => {
+          navigate("/reports");
+        }}
         onProducts={() => {
           navigate("/products");
         }}
@@ -1336,6 +1343,22 @@ async function handleAssetLoadError() {
             }
           />
 
+          <Route
+            path="/reports"
+            element={<SalesReport />}
+          />
+          <Route
+            path="/reports/inventory"
+            element={<InventoryReport />}
+          />
+          <Route
+            path="/reports/customers"
+            element={<CustomerReport />}
+          />
+          <Route
+            path="/reports/profitability"
+            element={<ProfitabilityReport />}
+          />
           <Route
             path="/business"
             element={

@@ -883,3 +883,240 @@ export async function updateProductStockTracking(
 
   return response.json();
 }
+
+export type SalesTrendPoint = {
+  date: string;
+  invoice_count: number;
+  sales_total: string | number;
+};
+
+export type ProductSales = {
+  product_id: string;
+  item_name: string;
+  base_unit_name: string | null;
+  quantity: string | number | null;
+  sales_total: string | number;
+  invoice_count: number;
+};
+
+export type SalesReport = {
+  start_date: string;
+  end_date: string;
+  reporting_timezone: string;
+  invoice_count: number;
+  sales_total: string | number;
+  average_invoice_value: string | number;
+  trend: SalesTrendPoint[];
+  products: ProductSales[];
+};
+
+export async function getSalesReport(
+  accessToken: string,
+  startDate: string,
+  endDate: string,
+): Promise<SalesReport> {
+  const params = new URLSearchParams({
+    start_date: startDate,
+    end_date: endDate,
+  });
+
+  const response = await fetch(
+    `${API_URL}/reports/sales?${params.toString()}`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+
+    throw new Error(
+      body?.detail ||
+        `Sales report request failed: ${response.status}`,
+    );
+  }
+
+  return response.json();
+}
+
+export type InventoryStockItem = {
+  product_id: string;
+  product_name: string;
+  base_unit: string;
+  stock_quantity: string | number | null;
+};
+
+export type InventoryMovementSummary = {
+  movement_type: string;
+  movement_count: number;
+};
+
+export type InventoryReportMovement = {
+  id: string;
+  product_id: string;
+  product_name: string;
+  movement_type: string;
+  quantity_delta: string | number;
+  stock_after: string | number;
+  reason: string;
+  bill_id: string | null;
+  created_at: string;
+};
+
+export type InventoryReport = {
+  start_date: string;
+  end_date: string;
+  reporting_timezone: string;
+  tracked_product_count: number;
+  out_of_stock_count: number;
+  stock_overview: InventoryStockItem[];
+  movement_summary: InventoryMovementSummary[];
+  movements: InventoryReportMovement[];
+};
+
+export async function getInventoryReport(
+  accessToken: string,
+  startDate: string,
+  endDate: string,
+): Promise<InventoryReport> {
+  const params = new URLSearchParams({
+    start_date: startDate,
+    end_date: endDate,
+  });
+
+  const response = await fetch(
+    `${API_URL}/reports/inventory?${params.toString()}`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+
+    throw new Error(
+      body?.detail ||
+        `Inventory report request failed: ${response.status}`,
+    );
+  }
+
+  return response.json();
+}
+
+export type CustomerInsightItem = {
+  customer_id: string;
+  customer_name: string;
+  phone: string | null;
+  created_at: string;
+  is_new_customer: boolean;
+  has_ever_purchased: boolean;
+  is_first_time_buyer: boolean;
+  invoice_count: number;
+  purchase_total: string | number;
+  average_invoice_value: string | number;
+};
+
+export type CustomerReport = {
+  start_date: string;
+  end_date: string;
+  reporting_timezone: string;
+  total_customer_count: number;
+  new_customer_count: number;
+  first_time_buyer_count: number;
+  active_customer_count: number;
+  never_purchased_count: number;
+  previously_purchased_inactive_count: number;
+  customers: CustomerInsightItem[];
+};
+
+export async function getCustomerReport(
+  accessToken: string,
+  startDate: string,
+  endDate: string,
+): Promise<CustomerReport> {
+  const params = new URLSearchParams({
+    start_date: startDate,
+    end_date: endDate,
+  });
+
+  const response = await fetch(
+    `${API_URL}/reports/customers?${params.toString()}`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+
+    throw new Error(
+      body?.detail ||
+        `Customer report request failed: ${response.status}`,
+    );
+  }
+
+  return response.json();
+}
+
+
+export interface ProductProfitability {
+  product_id: string;
+  product_name: string;
+  base_unit_name: string | null;
+  quantity_sold: number | null;
+  invoice_count: number;
+  line_count: number;
+  revenue: number;
+  known_cost_revenue: number;
+  known_estimated_cost: number;
+  estimated_gross_profit: number | null;
+  estimated_gross_margin: number | null;
+  missing_cost_line_count: number;
+  missing_cost_revenue: number;
+  cost_coverage_percentage: number | null;
+  profitability_status: "complete" | "partial" | "unavailable";
+}
+
+export interface ProfitabilityReport {
+  start_date: string;
+  end_date: string;
+  reporting_timezone: string;
+  total_product_count: number;
+  complete_cost_product_count: number;
+  partial_cost_product_count: number;
+  unavailable_cost_product_count: number;
+  products: ProductProfitability[];
+}
+
+
+export async function getProfitabilityReport(
+  accessToken: string,
+  startDate: string,
+  endDate: string,
+): Promise<ProfitabilityReport> {
+  const params = new URLSearchParams({
+    start_date: startDate,
+    end_date: endDate,
+  });
+
+  const response = await fetch(
+    `${API_URL}/reports/profitability?${params.toString()}`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error("Failed to fetch profitability report");
+  }
+
+  return response.json();
+}

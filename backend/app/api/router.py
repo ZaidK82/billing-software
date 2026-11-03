@@ -1,5 +1,7 @@
+from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
+from datetime import date, datetime
 
 from fastapi import (
     APIRouter,
@@ -33,6 +35,12 @@ from app.services.storage import (
     upload_business_asset,
 )
 from app.services.inventory import reconcile_bill_inventory
+from app.services.reports import build_sales_report
+from app.services.inventory_reports import build_inventory_report
+from app.services.customer_reports import build_customer_report
+from app.services.profitability_reports import (
+    build_profitability_report,
+)
 from app.models import (
     Bill,
     BillItem,
@@ -212,6 +220,118 @@ class BillListItemResponse(BaseModel):
     customer_name: str | None
     total: Decimal
     created_at: object
+
+class SalesTrendPointResponse(BaseModel):
+    date: date
+    invoice_count: int
+    sales_total: Decimal
+
+
+class ProductSalesResponse(BaseModel):
+    product_id: UUID
+    item_name: str
+    base_unit_name: str | None = None
+    quantity: Decimal | None = None
+    sales_total: Decimal
+    invoice_count: int
+
+
+class SalesReportResponse(BaseModel):
+    start_date: date
+    end_date: date
+    reporting_timezone: str
+    invoice_count: int
+    sales_total: Decimal
+    average_invoice_value: Decimal
+    trend: list[SalesTrendPointResponse]
+    products: list[ProductSalesResponse]
+
+class InventoryStockItemResponse(BaseModel):
+    product_id: UUID
+    product_name: str
+    base_unit: str
+    stock_quantity: Decimal | None
+
+
+class InventoryMovementSummaryResponse(BaseModel):
+    movement_type: str
+    movement_count: int
+
+class CustomerInsightItemResponse(BaseModel):
+    customer_id: UUID
+    customer_name: str
+    phone: str | None
+    created_at: datetime
+    is_new_customer: bool
+    is_first_time_buyer: bool
+    has_ever_purchased: bool
+    invoice_count: int
+    purchase_total: Decimal
+    average_invoice_value: Decimal
+
+
+class CustomerReportResponse(BaseModel):
+    start_date: date
+    end_date: date
+    reporting_timezone: str
+    total_customer_count: int
+    new_customer_count: int
+    first_time_buyer_count: int
+    active_customer_count: int
+    never_purchased_count: int
+    previously_purchased_inactive_count: int
+    customers: list[CustomerInsightItemResponse]
+
+class InventoryMovementResponse(BaseModel):
+    id: UUID
+    product_id: UUID
+    product_name: str
+    movement_type: str
+    quantity_delta: Decimal
+    stock_after: Decimal
+    reason: str
+    bill_id: UUID | None
+    created_at: datetime
+
+
+class InventoryReportResponse(BaseModel):
+    start_date: date
+    end_date: date
+    reporting_timezone: str
+    tracked_product_count: int
+    out_of_stock_count: int
+    stock_overview: list[InventoryStockItemResponse]
+    movement_summary: list[InventoryMovementSummaryResponse]
+    movements: list[InventoryMovementResponse]
+
+
+class ProductProfitabilityResponse(BaseModel):
+    product_id: UUID
+    product_name: str
+    base_unit_name: str | None
+    quantity_sold: Decimal | None
+    invoice_count: int
+    line_count: int
+    revenue: Decimal
+    known_cost_revenue: Decimal
+    known_estimated_cost: Decimal
+    estimated_gross_profit: Decimal | None
+    estimated_gross_margin: Decimal | None
+    missing_cost_line_count: int
+    missing_cost_revenue: Decimal
+    cost_coverage_percentage: Decimal | None
+    profitability_status: str
+
+
+class ProfitabilityReportResponse(BaseModel):
+    start_date: date
+    end_date: date
+    reporting_timezone: str
+    total_product_count: int
+    complete_cost_product_count: int
+    partial_cost_product_count: int
+    unavailable_cost_product_count: int
+    products: list[ProductProfitabilityResponse]
 
 class CustomerCreate(BaseModel):
     name: str
@@ -1330,6 +1450,106 @@ async def get_bills(
 
     return bills
 
+@router.get(
+    "/reports/sales",
+    response_model=SalesReportResponse,
+)
+async def get_sales_report(
+    start_date: date,
+    end_date: date,
+    user_id: UUID = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    if end_date < start_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="end_date must be on or after start_date.",
+        )
+
+    business = get_user_business(user_id, db)
+
+    return build_sales_report(
+        db=db,
+        business_id=business.id,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+@router.get(
+    "/reports/inventory",
+    response_model=InventoryReportResponse,
+)
+async def get_inventory_report(
+    start_date: date,
+    end_date: date,
+    user_id: UUID = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    if end_date < start_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="end_date must be on or after start_date.",
+        )
+
+    business = get_user_business(user_id, db)
+
+    return build_inventory_report(
+        db=db,
+        business_id=business.id,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+@router.get(
+    "/reports/customers",
+    response_model=CustomerReportResponse,
+)
+async def get_customer_report(
+    start_date: date,
+    end_date: date,
+    user_id: UUID = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    if end_date < start_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="end_date must be on or after start_date.",
+        )
+
+    business = get_user_business(user_id, db)
+
+    return build_customer_report(
+        db=db,
+        business_id=business.id,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+@router.get(
+    "/reports/profitability",
+    response_model=ProfitabilityReportResponse,
+)
+async def get_profitability_report(
+    start_date: date,
+    end_date: date,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    if end_date < start_date:
+        raise HTTPException(
+            status_code=400,
+            detail="end_date must be on or after start_date",
+        )
+
+    business = get_user_business(user_id, db)
+
+    return build_profitability_report(
+        db=db,
+        business_id=business.id,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
 @router.get("/bills/{bill_id}/pdf")
 async def get_bill_pdf(
     bill_id: UUID,
@@ -1544,7 +1764,7 @@ async def update_bill(
                 base_unit_name,
             ) = resolve_invoice_item_unit(item, db)
 
-                # Preserve historical purchase cost when the product remains the same.
+        # Preserve historical purchase cost when the product remains the same.
         # Recalculate only when the selected selling unit changes.
         if (
             existing_item is not None
@@ -1573,24 +1793,6 @@ async def update_bill(
 
         else:
             # New item or changed product: use the current catalogue cost.
-            purchase_price_snapshot = None
-
-            if item.product_id is not None:
-                product = db.get(Product, item.product_id)
-
-                if (
-                    product is not None
-                    and product.purchase_price is not None
-                ):
-                    purchase_price_snapshot = (
-                        product.purchase_price * conversion_factor
-                    ).quantize(Decimal("0.01"))
-        # New invoice items use the current product purchase price.
-        if existing_item is not None:
-            purchase_price_snapshot = (
-                existing_item.purchase_price_snapshot
-            )
-        else:
             purchase_price_snapshot = None
 
             if item.product_id is not None:
