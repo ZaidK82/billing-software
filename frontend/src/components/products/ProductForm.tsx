@@ -33,6 +33,7 @@ const STANDARD_UNITS = [
 type ProductFormValues = {
   name: string;
   description: string;
+  purchase_price: string;
   default_unit_price: string;
   base_unit: string;
   selling_units: SellingUnit[];
@@ -60,6 +61,9 @@ function ProductForm({
   const [defaultUnitPrice, setDefaultUnitPrice] = useState(
     product?.default_unit_price ?? "",
   );
+  const [purchasePrice, setPurchasePrice] = useState(
+    product?.purchase_price ?? "",
+  );
   const [baseUnit, setBaseUnit] = useState(product?.base_unit ?? "PCS");
   const [customBaseUnit, setCustomBaseUnit] = useState("");
   const [useCustomBaseUnit, setUseCustomBaseUnit] = useState(false);
@@ -75,6 +79,7 @@ function ProductForm({
     setName(product?.name ?? "");
     setDescription(product?.description ?? "");
     setDefaultUnitPrice(product?.default_unit_price ?? "");
+    setPurchasePrice(product?.purchase_price ?? "");
     const existingBaseUnit = product?.base_unit ?? "PCS";
     const isStandardBaseUnit = STANDARD_UNITS.some(
       (unit) => unit.value === existingBaseUnit,
@@ -144,6 +149,7 @@ function handleAddSellingUnit() {
     await onSubmit({
       name: name.trim(),
       description: description.trim(),
+      purchase_price: purchasePrice,
       default_unit_price: defaultUnitPrice,
       base_unit: (
         useCustomBaseUnit ? customBaseUnit : baseUnit
@@ -386,6 +392,32 @@ function handleAddSellingUnit() {
               {unitError && (
                 <p className="mt-2 text-sm text-red-600">{unitError}</p>
               )}
+            </div>
+
+            <div>
+              <label
+                htmlFor="product-purchase-price"
+                className="mb-1 block text-sm font-medium text-slate-700"
+              >
+                Purchase price per base unit (optional)
+              </label>
+              <input
+                id="product-purchase-price"
+                type="number"
+                min="0"
+                max="9999999999.99"
+                step="0.01"
+                value={purchasePrice}
+                onChange={(event) =>
+                  setPurchasePrice(event.target.value)
+                }
+                className="min-h-11 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                placeholder="Leave empty if unknown"
+              />
+              <p className="mt-1 text-xs text-slate-500">
+                Your current acquisition cost per base unit. Used for historical
+                invoice cost and gross-profit calculations.
+              </p>
             </div>
 
             <div>

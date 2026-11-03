@@ -154,6 +154,10 @@ function BillEditor({
           )
         : DEFAULT_COLUMNS;
 
+  const [selectedCustomerId, setSelectedCustomerId] = useState(
+    initialBill?.customer_id ?? ""
+  );
+
   const [customerName, setCustomerName] =
     useState(initialBill?.customer_name ?? "");
 
@@ -162,9 +166,6 @@ function BillEditor({
 
   const [customerAddress, setCustomerAddress] =
     useState(initialBill?.customer_address ?? "");
-
-  const [selectedCustomerId, setSelectedCustomerId] =
-    useState("");
 
   const [products, setProducts] = useState<Product[]>([]);
   const [isLoadingProducts, setIsLoadingProducts] = useState(true);
@@ -829,6 +830,7 @@ function removeItem(itemId: string) {
       }
 
       const billPayload = {
+        customer_id: selectedCustomerId || null,
         customer_name: trimmedCustomerName,
         customer_phone: customerPhone.trim() || null,
         customer_address: customerAddress.trim() || null,
@@ -881,7 +883,7 @@ function removeItem(itemId: string) {
               onClick={onCancel}
               className="mb-4 rounded-lg px-2 py-2 text-sm font-medium text-blue-600 transition hover:bg-blue-50 active:bg-blue-100"
             >
-              â† Dashboard
+              ← Dashboard
             </button>
 
             <p className="text-sm font-medium text-blue-600">
@@ -995,15 +997,15 @@ function removeItem(itemId: string) {
                               <td className="p-3">{item.item_name}</td>
                               <td className="p-3">{item.quantity}</td>
                               <td className="p-3">
-                                â‚¹{item.unit_price.toFixed(2)}
+                                ₹{item.unit_price.toFixed(2)}
                               </td>
                               <td className="p-3">
-                                â‚¹{(item.quantity * item.unit_price).toFixed(2)}
+                                ₹{(item.quantity * item.unit_price).toFixed(2)}
                               </td>
                               <td className="p-3">
                                 {item.stated_total === null
                                   ? "Not stated"
-                                  : `â‚¹${item.stated_total.toFixed(2)}`}
+                                  : `₹${item.stated_total.toFixed(2)}`}
                               </td>
                             </tr>
                           ))}
@@ -1299,7 +1301,7 @@ function removeItem(itemId: string) {
 
                       {products.map((product) => (
                         <option key={product.id} value={product.id}>
-                          {product.name} â€” â‚¹
+                          {product.name} — ₹
                           {Number(product.default_unit_price).toFixed(2)}
                         </option>
                       ))}
@@ -1362,7 +1364,7 @@ function removeItem(itemId: string) {
                           >
                             {sellingUnits.map((unit) => (
                               <option key={unit.name} value={unit.name}>
-                                {unit.name} (Ã—{Number(unit.factor)})
+                                {unit.name} (×{Number(unit.factor)})
                               </option>
                             ))}
                           </select>
@@ -1448,7 +1450,7 @@ function removeItem(itemId: string) {
                       ) : (
                         <div className="flex min-h-11 items-center rounded-lg bg-slate-100 px-3 py-2.5">
                           <span className="text-sm font-medium text-slate-700">
-                            â‚¹{draftItem.unit_price.toFixed(2)} per unit
+                            ₹{draftItem.unit_price.toFixed(2)} per unit
                           </span>
                         </div>
                       ))}
@@ -1471,7 +1473,7 @@ function removeItem(itemId: string) {
                       ) : (
                         <div className="flex min-h-11 items-center rounded-lg bg-white px-3 py-2.5">
                           <span className="text-sm font-semibold text-slate-900">
-                            â‚¹
+                            ₹
                             {(
                               draftItem.quantity * draftItem.unit_price
                             ).toFixed(2)}
@@ -1646,7 +1648,7 @@ function removeItem(itemId: string) {
                                 className="rounded-lg px-2 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
                                 aria-label={`Move ${item.item_name || `item ${index + 1}`} up`}
                               >
-                                â†‘
+                                ↑
                               </button>
 
                               <button
@@ -1656,7 +1658,7 @@ function removeItem(itemId: string) {
                                 className="rounded-lg px-2 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
                                 aria-label={`Move ${item.item_name || `item ${index + 1}`} down`}
                               >
-                                â†“
+                                ↓
                               </button>
 
                               <button
@@ -1725,13 +1727,13 @@ function removeItem(itemId: string) {
                                     "unit_price"
                                 ) {
                                     value =
-                                    `â‚¹${item.unit_price.toFixed(2)}`;
+                                    `₹${item.unit_price.toFixed(2)}`;
                                 } else if (
                                     column.key ===
                                     "line_total"
                                 ) {
                                     value =
-                                    `â‚¹${lineTotal.toFixed(2)}`;
+                                    `₹${lineTotal.toFixed(2)}`;
                                 }
                                 } else {
                                 const customValue =
@@ -1779,7 +1781,7 @@ function removeItem(itemId: string) {
                   <span>Subtotal</span>
 
                   <span className="font-medium">
-                    â‚¹{subtotal.toFixed(2)}
+                    ₹{subtotal.toFixed(2)}
                   </span>
                 </div>
 
@@ -1787,7 +1789,7 @@ function removeItem(itemId: string) {
                   <span>Total</span>
 
                   <span>
-                    â‚¹{total.toFixed(2)}
+                    ₹{total.toFixed(2)}
                   </span>
                 </div>
               </div>

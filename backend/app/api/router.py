@@ -139,10 +139,23 @@ class BillItemCreate(BaseModel):
     position: int | None = Field(default=None, ge=0)
     highlight_style: str | None = None
 
+class PurchaseCostCorrection(BaseModel):
+    purchase_price_snapshot: Decimal = Field(
+        ge=0,
+        max_digits=12,
+        decimal_places=2,
+    )
 
+    @field_validator("purchase_price_snapshot")
+    @classmethod
+    def validate_purchase_cost(cls, value: Decimal) -> Decimal:
+        if not value.is_finite():
+            raise ValueError("Purchase cost must be finite.")
+        return value
 
 class BillCreate(BaseModel):
     customer_name: str
+    customer_id: UUID | None = None
     customer_phone: str | None = None
     customer_address: str | None = None
     invoice_columns: list[InvoiceColumn] | None = None
@@ -162,8 +175,10 @@ class BillItemResponse(BaseModel):
     quantity: Decimal
     unit_name: str | None = None
     conversion_factor: Decimal | None = None
+    base_unit_name: str | None = None
     base_quantity: Decimal | None = None
     unit_price: Decimal
+    purchase_price_snapshot: Decimal | None = None
     line_total: Decimal
     custom_values: dict
     position: int
@@ -175,6 +190,7 @@ class BillResponse(BaseModel):
 
     id: UUID
     invoice_number: str
+    customer_id: UUID | None = None
     customer_name: str | None
     customer_phone: str | None
     customer_address: str | None
@@ -261,6 +277,7 @@ def validate_unit_names(base_unit: str, selling_units: list[SellingUnitInput]) -
 class ProductCreate(BaseModel):
     name: str = Field(min_length=1, max_length=150)
     description: str | None = None
+    purchase_price: Decimal | None = Field(default=None, ge=0)
     default_unit_price: Decimal = Field(ge=0)
     base_unit: str = Field(default="unit", min_length=1, max_length=30)
     selling_units: list[SellingUnitInput] = Field(default_factory=list)
@@ -282,6 +299,7 @@ class ProductCreate(BaseModel):
 class ProductUpdate(BaseModel):
     name: str = Field(min_length=1, max_length=150)
     description: str | None = None
+    purchase_price: Decimal | None = Field(default=None, ge=0)
     default_unit_price: Decimal = Field(ge=0)
     base_unit: str | None = Field(
         default=None,
@@ -317,6 +335,7 @@ class ProductResponse(BaseModel):
     id: UUID
     name: str
     description: str | None
+    purchase_price: Decimal | None = None
     default_unit_price: Decimal
     base_unit: str = "unit"
     selling_units: list[dict] = Field(default_factory=list)
@@ -428,6 +447,25 @@ def validate_invoice_product_ids(
             ),
         )
 
+def get_customer_for_business(
+    customer_id: UUID,
+    business_id: UUID,
+    db: Session,
+) -> Customer:
+    customer = db.scalar(
+        select(Customer).where(
+            Customer.id == customer_id,
+            Customer.business_id == business_id,
+        )
+    )
+
+    if customer is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Customer not found.",
+        )
+
+    return customer
 
 STANDARD_UNIT_CATEGORIES = {
     "PCS": "count",
@@ -592,20 +630,27 @@ def to_base_stock_quantity(
 def resolve_invoice_item_unit(
     item: BillItemCreate,
     db: Session,
-) -> tuple[str | None, Decimal, Decimal]:
-    """Return saved unit name, conversion factor and base quantity."""
+) -> tuple[str | None, Decimal, Decimal, str | None]:
+    """Return selling unit, conversion factor, base quantity and base unit."""
+
     if item.product_id is None:
-        return None, Decimal("1"), item.quantity
+        return None, Decimal("1"), item.quantity, None
 
     product = db.get(Product, item.product_id)
+
     if product is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Selected product was not found.",
         )
 
-    unit_name, factor = resolve_product_unit(product, item.unit_name)
+    unit_name, factor = resolve_product_unit(
+        product,
+        item.unit_name,
+    )
+
     raw_base_quantity = item.quantity * factor
+
     if (
         not raw_base_quantity.is_finite()
         or raw_base_quantity > Decimal("99999999999.999")
@@ -614,7 +659,10 @@ def resolve_invoice_item_unit(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Converted quantity exceeds the supported stock quantity.",
         )
-    base_quantity = raw_base_quantity.quantize(Decimal("0.001"))
+
+    base_quantity = raw_base_quantity.quantize(
+        Decimal("0.001")
+    )
 
     if base_quantity != raw_base_quantity:
         raise HTTPException(
@@ -631,7 +679,7 @@ def resolve_invoice_item_unit(
             detail="Converted quantity is below the supported stock precision.",
         )
 
-    return unit_name, factor, base_quantity
+    return unit_name, factor, base_quantity, product.base_unit
 
 
 def find_idempotent_stock_movement(
@@ -899,6 +947,48 @@ async def upload_business_asset_endpoint(
         "path": storage_path,
     }
 
+@router.delete("/business/{asset_type}")
+def delete_business_asset_endpoint(
+    asset_type: str,
+    user_id: UUID = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    if asset_type not in {"logo", "signature"}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid business asset type.",
+        )
+
+    business = get_user_business(user_id, db)
+
+    storage_path = (
+        business.logo_path
+        if asset_type == "logo"
+        else business.signature_path
+    )
+
+    if not storage_path:
+        return {
+            "message": f"No {asset_type} to delete.",
+            "asset_type": asset_type,
+        }
+
+    # Clear the database reference first.
+    if asset_type == "logo":
+        business.logo_path = None
+    else:
+        business.signature_path = None
+
+    db.commit()
+    db.refresh(business)
+
+    # Delete the actual file from Supabase Storage.
+    delete_business_asset(storage_path=storage_path)
+
+    return {
+        "message": f"Business {asset_type} deleted successfully.",
+        "asset_type": asset_type,
+    }
 @router.get("/business/{asset_type}/url")
 def get_business_asset_url(
     asset_type: str,
@@ -954,6 +1044,16 @@ async def create_bill(
     )
 
     customer_name = bill_data.customer_name.strip()
+
+    customer = (
+        get_customer_for_business(
+            customer_id=bill_data.customer_id,
+            business_id=business.id,
+            db=db,
+        )
+        if bill_data.customer_id is not None
+        else None
+    )
 
     if not customer_name:
         raise HTTPException(
@@ -1034,9 +1134,22 @@ async def create_bill(
                 detail="Item amount exceeds the supported limit.",
             )
 
-        unit_name, conversion_factor, base_quantity = (
-            resolve_invoice_item_unit(item, db)
-        )
+        (
+            unit_name,
+            conversion_factor,
+            base_quantity,
+            base_unit_name,
+        ) = resolve_invoice_item_unit(item, db)
+
+        purchase_price_snapshot = None
+
+        if item.product_id is not None:
+            product = db.get(Product, item.product_id)
+
+            if product is not None and product.purchase_price is not None:
+                purchase_price_snapshot = (
+                    product.purchase_price * conversion_factor
+                ).quantize(Decimal("0.01"))
 
         cleaned_items.append(
             {
@@ -1046,8 +1159,10 @@ async def create_bill(
                 "unit_name": unit_name,
                 "conversion_factor": conversion_factor,
                 "base_quantity": base_quantity,
+                "base_unit_name": base_unit_name,
                 "quantity": item.quantity,
                 "unit_price": item.unit_price,
+                "purchase_price_snapshot": purchase_price_snapshot,
                 "line_total": line_total,
                 "custom_values": item.custom_values,
                 "highlight_style": item.highlight_style,
@@ -1123,6 +1238,7 @@ async def create_bill(
 
     bill = Bill(
         business_id=business.id,
+        customer_id=customer.id if customer else None,
         invoice_number=invoice_number,
         customer_name=customer_name,
         customer_phone=(
@@ -1172,7 +1288,11 @@ async def create_bill(
                 unit_name=item_data["unit_name"],
                 conversion_factor=item_data["conversion_factor"],
                 base_quantity=item_data["base_quantity"],
+                base_unit_name=item_data["base_unit_name"],
                 unit_price=item_data["unit_price"],
+                purchase_price_snapshot=item_data[
+                    "purchase_price_snapshot"
+                ],
                 line_total=item_data["line_total"],
                 custom_values=item_data["custom_values"],
                 position=item_data["position"],
@@ -1303,6 +1423,22 @@ async def update_bill(
 
     customer_name = bill_data.customer_name.strip()
 
+    customer_id_was_submitted = (
+        "customer_id" in bill_data.model_fields_set
+    )
+
+    customer = None
+
+    if (
+        customer_id_was_submitted
+        and bill_data.customer_id is not None
+    ):
+        customer = get_customer_for_business(
+            customer_id=bill_data.customer_id,
+            business_id=business.id,
+            db=db,
+        )
+
     if not customer_name:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1316,6 +1452,11 @@ async def update_bill(
         )
 
     cleaned_items: list[dict] = []
+
+    existing_items_by_id = {
+        item.id: item
+        for item in bill.items
+    }
 
     validate_invoice_product_ids(
         {
@@ -1375,9 +1516,93 @@ async def update_bill(
                 detail="Item amount exceeds the supported limit.",
             )
 
-        unit_name, conversion_factor, base_quantity = (
-            resolve_invoice_item_unit(item, db)
+        existing_item = (
+            existing_items_by_id.get(item.id)
+            if item.id is not None
+            else None
         )
+
+        # Preserve historical unit snapshots when the product,
+        # entered quantity and selected selling unit are unchanged.
+        preserve_snapshot = (
+            existing_item is not None
+            and existing_item.product_id == item.product_id
+            and existing_item.quantity == item.quantity
+            and existing_item.unit_name == item.unit_name
+        )
+
+        if preserve_snapshot:
+            unit_name = existing_item.unit_name
+            conversion_factor = existing_item.conversion_factor
+            base_quantity = existing_item.base_quantity
+            base_unit_name = existing_item.base_unit_name
+        else:
+            (
+                unit_name,
+                conversion_factor,
+                base_quantity,
+                base_unit_name,
+            ) = resolve_invoice_item_unit(item, db)
+
+                # Preserve historical purchase cost when the product remains the same.
+        # Recalculate only when the selected selling unit changes.
+        if (
+            existing_item is not None
+            and existing_item.product_id == item.product_id
+        ):
+            purchase_price_snapshot = (
+                existing_item.purchase_price_snapshot
+            )
+
+            if (
+                purchase_price_snapshot is not None
+                and existing_item.unit_name != unit_name
+            ):
+                old_factor = existing_item.conversion_factor
+
+                if old_factor is not None and old_factor > 0:
+                    purchase_price_per_base_unit = (
+                        purchase_price_snapshot / old_factor
+                    )
+
+                    purchase_price_snapshot = (
+                        purchase_price_per_base_unit * conversion_factor
+                    ).quantize(Decimal("0.01"))
+                else:
+                    purchase_price_snapshot = None
+
+        else:
+            # New item or changed product: use the current catalogue cost.
+            purchase_price_snapshot = None
+
+            if item.product_id is not None:
+                product = db.get(Product, item.product_id)
+
+                if (
+                    product is not None
+                    and product.purchase_price is not None
+                ):
+                    purchase_price_snapshot = (
+                        product.purchase_price * conversion_factor
+                    ).quantize(Decimal("0.01"))
+        # New invoice items use the current product purchase price.
+        if existing_item is not None:
+            purchase_price_snapshot = (
+                existing_item.purchase_price_snapshot
+            )
+        else:
+            purchase_price_snapshot = None
+
+            if item.product_id is not None:
+                product = db.get(Product, item.product_id)
+
+                if (
+                    product is not None
+                    and product.purchase_price is not None
+                ):
+                    purchase_price_snapshot = (
+                        product.purchase_price * conversion_factor
+                    ).quantize(Decimal("0.01"))
 
         cleaned_items.append(
             {
@@ -1387,8 +1612,10 @@ async def update_bill(
                 "unit_name": unit_name,
                 "conversion_factor": conversion_factor,
                 "base_quantity": base_quantity,
+                "base_unit_name": base_unit_name,
                 "quantity": item.quantity,
                 "unit_price": item.unit_price,
+                "purchase_price_snapshot": purchase_price_snapshot,
                 "line_total": line_total,
                 "custom_values": item.custom_values,
                 "highlight_style": item.highlight_style,
@@ -1422,10 +1649,6 @@ async def update_bill(
         for item in bill.items
     ]
 
-    existing_items_by_id = {
-        item.id: item
-        for item in bill.items
-    }
     submitted_ids = [
         item["id"]
         for item in cleaned_items
@@ -1448,6 +1671,10 @@ async def update_bill(
         # Deliberately preserve id, business_id, invoice_number,
         # created_at, and terms_and_conditions.
         bill.customer_name = customer_name
+        if customer_id_was_submitted:
+            bill.customer_id = (
+                customer.id if customer is not None else None
+            )
         bill.customer_phone = (
             bill_data.customer_phone.strip()
             if bill_data.customer_phone
@@ -1503,7 +1730,11 @@ async def update_bill(
                     "conversion_factor"
                 ]
                 existing_item.base_quantity = item_data["base_quantity"]
+                existing_item.base_unit_name = item_data["base_unit_name"]
                 existing_item.unit_price = item_data["unit_price"]
+                existing_item.purchase_price_snapshot = item_data[
+                    "purchase_price_snapshot"
+                ]
                 existing_item.line_total = item_data["line_total"]
                 existing_item.custom_values = item_data["custom_values"]
                 existing_item.position = item_data["position"]
@@ -1523,7 +1754,11 @@ async def update_bill(
                         unit_name=item_data["unit_name"],
                         conversion_factor=item_data["conversion_factor"],
                         base_quantity=item_data["base_quantity"],
+                        base_unit_name=item_data["base_unit_name"],
                         unit_price=item_data["unit_price"],
+                        purchase_price_snapshot=item_data[
+                            "purchase_price_snapshot"
+                        ],
                         line_total=item_data["line_total"],
                         custom_values=item_data["custom_values"],
                         position=item_data["position"],
@@ -1548,6 +1783,56 @@ async def update_bill(
             detail="Unable to update bill.",
         ) from exc
 
+@router.patch(
+    "/bills/{bill_id}/items/{item_id}/purchase-cost",
+)
+def correct_invoice_item_purchase_cost(
+    bill_id: UUID,
+    item_id: UUID,
+    payload: PurchaseCostCorrection,
+    user_id: UUID = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    business = get_user_business(user_id, db)
+
+    bill = db.scalar(
+        select(Bill)
+        .where(
+            Bill.id == bill_id,
+            Bill.business_id == business.id,
+        )
+        .with_for_update()
+    )
+
+    if bill is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Bill not found.",
+        )
+
+    bill_item = next(
+        (item for item in bill.items if item.id == item_id),
+        None,
+    )
+
+    if bill_item is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invoice item not found.",
+        )
+
+    bill_item.purchase_price_snapshot = (
+        payload.purchase_price_snapshot
+    )
+
+    try:
+        db.commit()
+        db.refresh(bill_item)
+        return bill_item
+
+    except Exception:
+        db.rollback()
+        raise
 
 @router.delete(
     "/bills/{bill_id}",
@@ -2163,6 +2448,7 @@ async def create_product(
         business_id=business.id,
         name=name,
         description=description,
+        purchase_price=payload.purchase_price,
         default_unit_price=payload.default_unit_price,
         base_unit=base_unit,
         selling_units=selling_units,
@@ -2236,6 +2522,21 @@ async def update_product(
         requested_selling_units,
     )
     if base_unit.casefold() != (product.base_unit or "unit").casefold():
+        has_invoice_history = db.scalar(
+            select(BillItem.id)
+            .where(BillItem.product_id == product.id)
+            .limit(1)
+        )
+
+        if has_invoice_history is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "The base unit cannot be changed after the product "
+                    "has been used in an invoice."
+                ),
+            )
+
         has_movement = db.scalar(
             select(InventoryMovement.id)
             .where(InventoryMovement.product_id == product.id)
@@ -2256,6 +2557,9 @@ async def update_product(
         if payload.description and payload.description.strip()
         else None
     )
+    if "purchase_price" in payload.model_fields_set:
+        product.purchase_price = payload.purchase_price
+
     product.default_unit_price = payload.default_unit_price
     product.base_unit = base_unit
     product.selling_units = selling_units

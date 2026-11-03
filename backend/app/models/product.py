@@ -44,6 +44,15 @@ class Product(Base):
         nullable=True,
     )
 
+    # Current purchase cost per base unit.
+    # NULL means the purchase cost has not been recorded.
+    purchase_price: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 2),
+        nullable=True,
+    )
+
+    # Current selling price per base unit.
+    # Retained under its existing name for compatibility.
     default_unit_price: Mapped[Decimal] = mapped_column(
         Numeric(12, 2),
         nullable=False,

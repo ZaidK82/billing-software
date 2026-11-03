@@ -3,6 +3,7 @@ import { useState } from "react";
 import {
   downloadBillPdf,
   updateBill,
+  correctInvoiceItemPurchaseCost,
   DEFAULT_INVOICE_APPEARANCE,
 } from "../../lib/api";
 
@@ -58,6 +59,8 @@ function BillPreview({
       ...(bill.appearance_settings ?? {}),
     }));
 
+  const [localItems, setLocalItems] = useState(bill.items);
+
   const [isSavingAppearance, setIsSavingAppearance] =
     useState(false);
 
@@ -75,6 +78,21 @@ function BillPreview({
 
   const [downloadError, setDownloadError] =
     useState<string | null>(null);
+
+  const [correctingItemId, setCorrectingItemId] =
+    useState<string | null>(null);
+
+  const [purchaseCostInput, setPurchaseCostInput] =
+    useState("");
+
+  const [purchaseCostError, setPurchaseCostError] =
+    useState<string | null>(null);
+
+  const [purchaseCostMessage, setPurchaseCostMessage] =
+    useState<string | null>(null);
+
+  const [isSavingPurchaseCost, setIsSavingPurchaseCost] =
+    useState(false);
 
   function formatMoney(value: string | number): string {
     return `₹${Number(value).toLocaleString("en-IN", {
@@ -347,6 +365,7 @@ function BillPreview({
       }
 
       const payload = {
+        customer_id: bill.customer_id ?? null,
         customer_name: bill.customer_name ?? "",
         customer_phone: bill.customer_phone,
         customer_address: bill.customer_address,
@@ -428,6 +447,85 @@ function BillPreview({
       );
     } finally {
       setIsDownloading(false);
+    }
+  }
+
+  async function handleCorrectPurchaseCost(
+    itemId: string,
+  ) {
+    if (isSavingPurchaseCost) {
+      return;
+    }
+
+    const value = purchaseCostInput.trim();
+    const purchaseCost = Number(value);
+
+    if (
+      !value ||
+      !Number.isFinite(purchaseCost) ||
+      purchaseCost < 0 ||
+      !/^\d+(\.\d{1,2})?$/.test(value)
+    ) {
+      setPurchaseCostError(
+        "Enter a valid purchase cost with up to 2 decimal places.",
+      );
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Correct the historical purchase cost for this invoice item? This will not change the selling price, quantity, invoice total, or stock.",
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setIsSavingPurchaseCost(true);
+    setPurchaseCostError(null);
+    setPurchaseCostMessage(null);
+
+    try {
+      const session = await getSession();
+
+      if (!session?.access_token) {
+        throw new Error(
+          "Your session has expired. Please log in again.",
+        );
+      }
+
+      const updatedItem = await correctInvoiceItemPurchaseCost(
+        session.access_token,
+        bill.id,
+        itemId,
+        purchaseCost,
+      );
+
+      setLocalItems((currentItems) =>
+        currentItems.map((item) =>
+          item.id === itemId
+            ? {
+                ...item,
+                purchase_price_snapshot:
+                  updatedItem.purchase_price_snapshot,
+              }
+            : item,
+        ),
+      );
+
+      setPurchaseCostMessage(
+        "Historical purchase cost corrected successfully.",
+      );
+
+      setCorrectingItemId(null);
+      setPurchaseCostInput("");
+    } catch (error) {
+      setPurchaseCostError(
+        error instanceof Error
+          ? error.message
+          : "Unable to correct the historical purchase cost.",
+      );
+    } finally {
+      setIsSavingPurchaseCost(false);
     }
   }
 
@@ -950,6 +1048,133 @@ function BillPreview({
                 ))}
               </tbody>
             </table>
+          </div>
+
+          <div className="border-t border-slate-200 bg-slate-50 px-5 py-5 sm:px-8">
+            <h2 className="text-base font-semibold text-slate-900">
+              Advanced: Historical Purchase Cost
+            </h2>
+
+            <p className="mt-1 text-sm text-slate-600">
+              Correct recorded purchase costs for this invoice.
+              These values are internal and do not appear on the invoice PDF.
+              Corrections do not affect selling prices, quantities, totals, or stock.
+            </p>
+
+            {purchaseCostMessage && (
+              <p className="mt-3 rounded-lg bg-green-50 p-3 text-sm text-green-700">
+                {purchaseCostMessage}
+              </p>
+            )}
+
+            {purchaseCostError && (
+              <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">
+                {purchaseCostError}
+              </p>
+            )}
+
+            <div className="mt-4 space-y-3">
+              {localItems.map((item) => (
+                <div
+                  key={item.id}
+                  className="rounded-xl border border-slate-200 bg-white p-3"
+                >
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="font-medium text-slate-900">
+                        {item.item_name}
+                      </p>
+
+                      <p className="mt-1 text-sm text-slate-600">
+                        Recorded cost:{" "}
+                        {item.purchase_price_snapshot !== null
+                          ? formatMoney(item.purchase_price_snapshot)
+                          : "Not recorded"}
+                        {item.unit_name
+                          ? ` / ${item.unit_name}`
+                          : ""}
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={isSavingPurchaseCost}
+                      onClick={() => {
+                        setCorrectingItemId(item.id);
+                        setPurchaseCostInput(
+                          item.purchase_price_snapshot ?? "",
+                        );
+                        setPurchaseCostError(null);
+                        setPurchaseCostMessage(null);
+                      }}
+                      className="min-h-10 rounded-lg border border-amber-300 px-3 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-50 disabled:opacity-50"
+                    >
+                      {item.purchase_price_snapshot === null
+                        ? "Record Cost"
+                        : "Correct Cost"}
+                    </button>
+                  </div>
+
+                  {correctingItemId === item.id && (
+                    <div className="mt-3 border-t border-slate-100 pt-3">
+                      <label
+                        htmlFor={`purchase-cost-${item.id}`}
+                        className="mb-1 block text-sm font-medium text-slate-700"
+                      >
+                        Correct purchase cost
+                        {item.unit_name
+                          ? ` per ${item.unit_name}`
+                          : ""}
+                      </label>
+
+                      <input
+                        id={`purchase-cost-${item.id}`}
+                        type="number"
+                        min="0"
+                        max="9999999999.99"
+                        step="0.01"
+                        value={purchaseCostInput}
+                        onChange={(event) => {
+                          setPurchaseCostInput(event.target.value);
+                          setPurchaseCostError(null);
+                        }}
+                        disabled={isSavingPurchaseCost}
+                        className="min-h-11 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                        placeholder="Enter historical purchase cost"
+                      />
+
+                      <div className="mt-3 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                        <button
+                          type="button"
+                          disabled={isSavingPurchaseCost}
+                          onClick={() => {
+                            setCorrectingItemId(null);
+                            setPurchaseCostInput("");
+                            setPurchaseCostError(null);
+                          }}
+                          className="min-h-10 rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                        >
+                          Cancel
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={isSavingPurchaseCost}
+                          onClick={() =>
+                            void handleCorrectPurchaseCost(item.id)
+                          }
+                          className="min-h-10 rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
+                        >
+                          {isSavingPurchaseCost
+                            ? "Saving..."
+                            : "Confirm Correction"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
 
           <div className="border-t border-slate-200 px-5 py-6 sm:px-8 sm:py-7">

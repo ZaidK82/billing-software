@@ -7,6 +7,7 @@ import {
 import {
   getBusinessAssetUrl,
   uploadBusinessAsset,
+  deleteBusinessAsset,
   type BusinessProfile,
 } from "../../lib/api";
 import { getSession } from "../../lib/auth";
@@ -48,6 +49,10 @@ function BusinessProfilePage({
   onLogout,
 }: BusinessProfileProps) {
   const [uploadingAsset, setUploadingAsset] = useState<
+    "logo" | "signature" | null
+  >(null);
+
+  const [deletingAsset, setDeletingAsset] = useState<
     "logo" | "signature" | null
   >(null);
 
@@ -176,6 +181,52 @@ function BusinessProfilePage({
       );
     } finally {
       setUploadingAsset(null);
+    }
+  }
+
+  async function handleAssetDelete(
+    assetType: "logo" | "signature",
+  ) {
+    const confirmed = window.confirm(
+      `Are you sure you want to remove the business ${assetType}?`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingAsset(assetType);
+    setUploadError(null);
+
+    try {
+      const session = await getSession();
+
+      if (!session?.access_token) {
+        throw new Error(
+          "Your session has expired. Please log in again.",
+        );
+      }
+
+      await deleteBusinessAsset(
+        session.access_token,
+        assetType,
+      );
+
+      if (assetType === "logo") {
+        setLogoUrl(null);
+        updateBusiness({ logo_path: null });
+      } else {
+        setSignatureUrl(null);
+        updateBusiness({ signature_path: null });
+      }
+    } catch (deleteError) {
+      setUploadError(
+        deleteError instanceof Error
+          ? deleteError.message
+          : `Unable to remove ${assetType}.`,
+      );
+    } finally {
+      setDeletingAsset(null);
     }
   }
 
@@ -630,6 +681,22 @@ function BusinessProfilePage({
                   className="mt-3 block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-200"
                 />
 
+                {business.logo_path && !loadingAssets && (
+                  <button
+                    type="button"
+                    onClick={() => void handleAssetDelete("logo")}
+                    disabled={
+                      uploadingAsset !== null ||
+                      deletingAsset !== null
+                    }
+                    className="mt-3 rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {deletingAsset === "logo"
+                      ? "Removing logo..."
+                      : "Remove Logo"}
+                  </button>
+                )}
+
                 {uploadingAsset === "logo" && (
                   <p className="mt-2 text-sm text-blue-600">
                     Uploading logo...
@@ -686,6 +753,22 @@ function BusinessProfilePage({
                   }}
                   className="mt-3 block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-200"
                 />
+
+                {business.signature_path && !loadingAssets && (
+                  <button
+                    type="button"
+                    onClick={() => void handleAssetDelete("signature")}
+                    disabled={
+                      uploadingAsset !== null ||
+                      deletingAsset !== null
+                    }
+                    className="mt-3 rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {deletingAsset === "signature"
+                      ? "Removing signature..."
+                      : "Remove Signature"}
+                  </button>
+                )}
 
                 {uploadingAsset === "signature" && (
                   <p className="mt-2 text-sm text-blue-600">

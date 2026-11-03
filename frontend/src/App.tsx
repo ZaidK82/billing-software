@@ -745,6 +745,7 @@ async function handleAssetLoadError() {
     values: {
       name: string;
       description: string;
+      purchase_price: string;
       default_unit_price: string;
       base_unit: string;
       selling_units: Product["selling_units"];
@@ -765,6 +766,10 @@ async function handleAssetLoadError() {
       const payload: CreateProductRequest = {
         name: values.name.trim(),
         description: values.description.trim() || null,
+        purchase_price:
+          values.purchase_price.trim() === ""
+            ? null
+            : Number(values.purchase_price),
         default_unit_price: Number(values.default_unit_price),
         base_unit: values.base_unit.trim(),
         selling_units: values.selling_units,
@@ -799,6 +804,7 @@ async function handleAssetLoadError() {
     values: {
       name: string;
       description: string;
+      purchase_price: string;
       default_unit_price: string;
       base_unit: string;
       selling_units: Product["selling_units"];
@@ -823,6 +829,10 @@ async function handleAssetLoadError() {
       const payload: CreateProductRequest = {
         name: values.name.trim(),
         description: values.description.trim() || null,
+        purchase_price:
+          values.purchase_price.trim() === ""
+            ? null
+            : Number(values.purchase_price),
         default_unit_price: Number(values.default_unit_price),
         base_unit: values.base_unit.trim(),
         selling_units: values.selling_units,

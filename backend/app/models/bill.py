@@ -45,6 +45,13 @@ class Bill(Base):
         nullable=False,
     )
 
+    customer_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("customers.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     invoice_number: Mapped[str] = mapped_column(
         String(50),
         nullable=False,
@@ -128,6 +135,8 @@ class Bill(Base):
         order_by="BillItem.position",
     )
 
+    customer: Mapped["Customer | None"] = relationship()
+
 class BillItem(Base):
     __tablename__ = "bill_items"
 
@@ -196,9 +205,25 @@ class BillItem(Base):
         nullable=True,
     )
 
+    # Historical canonical-unit label corresponding to base_quantity.
+    # NULL is retained for legacy or non-product invoice lines.
+    base_unit_name: Mapped[str | None] = mapped_column(
+        String(30),
+        nullable=True,
+    )
+
+    # Historical selling price per selected invoice unit.
     unit_price: Mapped[Decimal] = mapped_column(
         Numeric(12, 2),
         nullable=False,
+    )
+
+    # Historical purchase cost per selected invoice unit.
+    # NULL means the historical purchase cost is unknown,
+    # such as for invoices created before this feature.
+    purchase_price_snapshot: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 2),
+        nullable=True,
     )
 
     line_total: Mapped[Decimal] = mapped_column(

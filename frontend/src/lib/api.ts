@@ -160,6 +160,30 @@ export async function updateBusinessProfile(
   return response.json();
 }
 
+export async function deleteBusinessAsset(
+  accessToken: string,
+  assetType: "logo" | "signature",
+): Promise<void> {
+  const response = await fetch(
+    `${API_URL}/business/${assetType}`,
+    {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+
+    throw new Error(
+      body?.detail ||
+        `Business ${assetType} deletion failed: ${response.status}`,
+    );
+  }
+}
+
 export async function uploadBusinessAsset(
   accessToken: string,
   assetType: "logo" | "signature",
@@ -236,6 +260,7 @@ export type CreateBillItem = {
 
 
 export type CreateBillRequest = {
+  customer_id: string | null;
   customer_name: string;
   customer_phone: string | null;
   customer_address: string | null;
@@ -254,6 +279,7 @@ export type SavedBillItem = {
   conversion_factor: string | null;
   base_quantity: string | null;
   unit_price: string;
+  purchase_price_snapshot: string | null;
   line_total: string;
   custom_values: Record<string, unknown>;
   highlight_style: string | null;
@@ -262,6 +288,7 @@ export type SavedBillItem = {
 export type SavedBill = {
   id: string;
   invoice_number: string;
+  customer_id: string | null;
   customer_name: string | null;
   customer_phone: string | null;
   customer_address: string | null;
@@ -329,6 +356,37 @@ export async function updateBill(
   return response.json();
 }
 
+export async function correctInvoiceItemPurchaseCost(
+  accessToken: string,
+  billId: string,
+  itemId: string,
+  purchasePriceSnapshot: number,
+): Promise<SavedBillItem> {
+  const response = await fetch(
+    `${API_URL}/bills/${billId}/items/${itemId}/purchase-cost`,
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        purchase_price_snapshot: purchasePriceSnapshot,
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+
+    throw new Error(
+      body?.detail ||
+        `Purchase cost correction failed: ${response.status}`,
+    );
+  }
+
+  return response.json();
+}
 
 export async function downloadBillPdf(
   accessToken: string,
@@ -543,6 +601,7 @@ export type Product = {
   id: string;
   name: string;
   description: string | null;
+  purchase_price: string | null;
   default_unit_price: string;
   base_unit: string;
   selling_units: SellingUnit[];
@@ -555,6 +614,7 @@ export type Product = {
 export type CreateProductRequest = {
   name: string;
   description: string | null;
+  purchase_price: number | null;
   default_unit_price: number;
   base_unit: string;
   selling_units: SellingUnit[];

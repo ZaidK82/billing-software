@@ -600,10 +600,18 @@ function ProductList({
                         </p>
                       )}
 
-                      <p className="mt-2 text-sm font-medium text-slate-800">
-                        Default unit price:{" "}
-                        {Number(product.default_unit_price).toFixed(2)}
+                    <div className="mt-2 space-y-1 text-sm">
+                      <p className="font-medium text-slate-800">
+                        Selling price: ₹{Number(product.default_unit_price).toFixed(2)} / {product.base_unit}
                       </p>
+
+                      <p className="text-slate-600">
+                        Purchase price:{" "}
+                        {product.purchase_price !== null
+                          ? `₹${Number(product.purchase_price).toFixed(2)} / ${product.base_unit}`
+                          : "Not recorded"}
+                      </p>
+                    </div>
 
                       <p className="mt-1 text-sm text-slate-600">
                         Base unit: <span className="font-medium">{product.base_unit}</span>
