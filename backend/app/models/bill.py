@@ -84,6 +84,13 @@ class Bill(Base):
         default=Decimal("0.00"),
     )
 
+    shipping_charge: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2),
+        nullable=False,
+        default=Decimal("0.00"),
+        server_default="0.00",
+    )
+
     invoice_columns: Mapped[list[dict]] = mapped_column(
         JSONB,
         nullable=False,

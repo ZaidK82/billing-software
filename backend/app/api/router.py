@@ -2,6 +2,9 @@ from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 from datetime import date, datetime
+import json
+
+from fastapi import Form
 
 from fastapi import (
     APIRouter,
@@ -51,6 +54,14 @@ from app.models import (
 )
 from app.models.product import Product
 from app.models.inventory_movement import InventoryMovement
+from app.services.product_pdf_import import (
+    ProductPDFImportError,
+    extract_product_pdf,
+)
+from app.services.product_excel_import import (
+    extract_product_excel,
+    ProductExcelImportError,
+)
 
 router = APIRouter()
 
@@ -166,11 +177,24 @@ class BillCreate(BaseModel):
     customer_id: UUID | None = None
     customer_phone: str | None = None
     customer_address: str | None = None
+    shipping_charge: Decimal = Field(
+        default=Decimal("0.00"),
+        ge=0,
+        max_digits=12,
+        decimal_places=2,
+    )
     invoice_columns: list[InvoiceColumn] | None = None
     appearance_settings: InvoiceAppearanceSettings = Field(
         default_factory=InvoiceAppearanceSettings
     )
     items: list[BillItemCreate]
+
+    @field_validator("shipping_charge")
+    @classmethod
+    def validate_shipping_charge(cls, value: Decimal) -> Decimal:
+        if not value.is_finite():
+            raise ValueError("Shipping charge must be finite.")
+        return value
 
 
 
@@ -203,6 +227,7 @@ class BillResponse(BaseModel):
     customer_phone: str | None
     customer_address: str | None
     subtotal: Decimal
+    shipping_charge: Decimal
     total: Decimal
     created_at: object
     invoice_columns: list[InvoiceColumn]
@@ -358,10 +383,60 @@ class CustomerResponse(BaseModel):
     created_at: object
     updated_at: object
 
+class CustomerMatchRequest(BaseModel):
+    name: str | None = Field(default=None, max_length=150)
+    phone: str | None = Field(default=None, max_length=30)
+
+
+class CustomerMatchCandidate(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    name: str
+    phone: str | None
+    email: str | None
+    address: str | None
+
+class CustomerMatchResponse(BaseModel):
+    status: str
+    match_type: str | None = None
+    candidates: list[CustomerMatchCandidate] = Field(
+        default_factory=list
+    )
+
+
+class ProductMatchRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=150)
+
+
+class ProductMatchCandidate(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    name: str
+    purchase_price: Decimal | None
+    default_unit_price: Decimal
+    base_unit: str
+    selling_units: list[dict]
+    is_stock_tracked: bool
+    stock_quantity: Decimal | None
+
+
+class ProductMatchResponse(BaseModel):
+    status: str
+    candidates: list[ProductMatchCandidate] = Field(
+        default_factory=list
+    )
 
 class SellingUnitInput(BaseModel):
     name: str = Field(min_length=1, max_length=30)
     factor: Decimal = Field(gt=0, max_digits=14, decimal_places=6)
+    price: Decimal | None = Field(
+        default=None,
+        ge=0,
+        max_digits=12,
+        decimal_places=2,
+    )
 
     @field_validator("name")
     @classmethod
@@ -375,7 +450,19 @@ class SellingUnitInput(BaseModel):
     @classmethod
     def validate_factor(cls, value: Decimal) -> Decimal:
         if not value.is_finite() or value <= 0:
-            raise ValueError("Conversion factor must be finite and positive.")
+            raise ValueError(
+                "Conversion factor must be finite and positive."
+            )
+        return value
+
+    @field_validator("price")
+    @classmethod
+    def validate_price(cls, value: Decimal | None) -> Decimal | None:
+        if value is not None:
+            if not value.is_finite() or value < 0:
+                raise ValueError(
+                    "Selling-unit price must be finite and non-negative."
+                )
         return value
 
 
@@ -665,22 +752,51 @@ def validate_selling_units(
 
     for unit in selling_units:
         name = normalize_unit_name(unit.name)
+
         if name.casefold() in seen:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Selling unit names must be unique and distinct from the base unit.",
+                detail=(
+                    "Selling unit names must be unique and "
+                    "distinct from the base unit."
+                ),
             )
+
         factor = unit.factor
+
         if not factor.is_finite() or factor <= 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Conversion factors must be finite and positive.",
             )
+
+        price = unit.price
+
+        if price is not None and (
+            not price.is_finite() or price < 0
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "Selling-unit prices must be finite "
+                    "and non-negative."
+                ),
+            )
+
         seen.add(name.casefold())
-        normalized_units.append({
+
+        normalized_unit = {
             "name": name,
             "factor": format(factor, "f"),
-        })
+        }
+
+        if price is not None:
+            normalized_unit["price"] = format(
+                price.quantize(Decimal("0.01")),
+                "f",
+            )
+
+        normalized_units.append(normalized_unit)
 
     validate_unit_compatibility(normalized_base, selling_units)
 
@@ -1302,7 +1418,19 @@ async def create_bill(
         Decimal("0.00"),
     ).quantize(Decimal("0.01"))
 
-    total = subtotal
+    shipping_charge = bill_data.shipping_charge.quantize(
+        Decimal("0.01")
+    )
+
+    total = (subtotal + shipping_charge).quantize(
+        Decimal("0.01")
+    )
+
+    if total > Decimal("9999999999.99"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invoice total exceeds the supported limit.",
+        )
 
     # Lock this business row so invoice-number allocation for
     # the same business is serialized across concurrent requests.
@@ -1372,6 +1500,7 @@ async def create_bill(
             else None
         ),
         subtotal=subtotal,
+        shipping_charge=shipping_charge,
         total=total,
         invoice_columns=[
             column.model_dump()
@@ -1834,7 +1963,15 @@ async def update_bill(
         Decimal("0.00"),
     ).quantize(Decimal("0.01"))
 
-    if subtotal > Decimal("9999999999.99"):
+    shipping_charge = bill_data.shipping_charge.quantize(
+        Decimal("0.01")
+    )
+
+    total = (subtotal + shipping_charge).quantize(
+        Decimal("0.01")
+    )
+
+    if total > Decimal("9999999999.99"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invoice total exceeds the supported limit.",
@@ -1888,7 +2025,8 @@ async def update_bill(
             else None
         )
         bill.subtotal = subtotal
-        bill.total = subtotal
+        bill.shipping_charge = shipping_charge
+        bill.total = total
 
         # Keep the saved invoice's column snapshot when the
         # request does not explicitly supply one.
@@ -2091,6 +2229,153 @@ async def delete_bill(
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
+def normalize_match_text(value: str | None) -> str:
+    if not value:
+        return ""
+
+    return " ".join(value.casefold().split())
+
+
+def normalize_match_phone(value: str | None) -> str:
+    if not value:
+        return ""
+
+    # Compare digits only so spaces, +, -, and parentheses
+    # do not prevent otherwise identical phone numbers matching.
+    return "".join(character for character in value if character.isdigit())
+
+
+@router.post(
+    "/customers/match",
+    response_model=CustomerMatchResponse,
+)
+async def match_customer(
+    payload: CustomerMatchRequest,
+    user_id: UUID = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    business = get_user_business(user_id, db)
+
+    normalized_phone = normalize_match_phone(payload.phone)
+    normalized_name = normalize_match_text(payload.name)
+
+    if not normalized_phone and not normalized_name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Provide a customer name or phone number.",
+        )
+
+    # Phone is the preferred identity signal.
+    if normalized_phone:
+        customers = db.scalars(
+            select(Customer).where(
+                Customer.business_id == business.id,
+                Customer.phone.is_not(None),
+            )
+        ).all()
+
+        phone_matches = [
+            customer
+            for customer in customers
+            if normalize_match_phone(customer.phone) == normalized_phone
+        ]
+
+        if len(phone_matches) == 1:
+            return CustomerMatchResponse(
+                status="matched",
+                match_type="phone",
+                candidates=phone_matches,
+            )
+
+        if len(phone_matches) > 1:
+            return CustomerMatchResponse(
+                status="ambiguous",
+                match_type="phone",
+                candidates=phone_matches,
+            )
+
+    # If no phone match exists, use exact normalized name.
+    if normalized_name:
+        customers = db.scalars(
+            select(Customer).where(
+                Customer.business_id == business.id,
+            )
+        ).all()
+
+        name_matches = [
+            customer
+            for customer in customers
+            if normalize_match_text(customer.name) == normalized_name
+        ]
+
+        if len(name_matches) == 1:
+            return CustomerMatchResponse(
+                status="matched",
+                match_type="name",
+                candidates=name_matches,
+            )
+
+        if len(name_matches) > 1:
+            return CustomerMatchResponse(
+                status="ambiguous",
+                match_type="name",
+                candidates=name_matches,
+            )
+
+    return CustomerMatchResponse(
+        status="not_found",
+        candidates=[],
+    )
+
+
+@router.post(
+    "/products/match",
+    response_model=ProductMatchResponse,
+)
+async def match_product(
+    payload: ProductMatchRequest,
+    user_id: UUID = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    business = get_user_business(user_id, db)
+
+    normalized_name = normalize_match_text(payload.name)
+
+    if not normalized_name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Product name is required.",
+        )
+
+    products = db.scalars(
+        select(Product).where(
+            Product.business_id == business.id,
+        )
+    ).all()
+
+    matches = [
+        product
+        for product in products
+        if normalize_match_text(product.name) == normalized_name
+    ]
+
+    if len(matches) == 1:
+        return ProductMatchResponse(
+            status="matched",
+            candidates=matches,
+        )
+
+    if len(matches) > 1:
+        return ProductMatchResponse(
+            status="ambiguous",
+            candidates=matches,
+        )
+
+    return ProductMatchResponse(
+        status="not_found",
+        candidates=[],
+    )
+
 @router.post(
     "/customers",
     response_model=CustomerResponse,
@@ -2229,6 +2514,1383 @@ async def list_products(
         .where(Product.business_id == business.id)
         .order_by(Product.name.asc())
     ).all()
+
+MAX_PRODUCT_PDF_SIZE_BYTES = 15 * 1024 * 1024
+MAX_PRODUCT_EXCEL_SIZE_BYTES = 15 * 1024 * 1024
+
+def _import_decimal(value) -> Decimal | None:
+    """Safely convert a stored or extracted value to Decimal."""
+    if value is None:
+        return None
+
+    try:
+        result = Decimal(str(value))
+    except Exception:
+        return None
+
+    if not result.is_finite():
+        return None
+
+    return result
+
+
+def _format_import_price(value: Decimal | None) -> str | None:
+    if value is None:
+        return None
+
+    return str(value.quantize(Decimal("0.01")))
+
+
+def _get_current_selling_unit_price(
+    product: Product,
+    unit_name: str,
+) -> Decimal | None:
+    """
+    Resolve the current price for a selling unit.
+
+    Explicit independent unit prices take precedence.
+    Older units without a price retain the proportional fallback.
+    """
+    normalized_name = normalize_match_text(unit_name)
+
+    for unit in product.selling_units or []:
+        if normalize_match_text(unit.get("name")) != normalized_name:
+            continue
+
+        explicit_price = _import_decimal(unit.get("price"))
+
+        if explicit_price is not None:
+            return explicit_price
+
+        factor = _import_decimal(unit.get("factor"))
+
+        if factor is None or factor <= 0:
+            return None
+
+        base_price = _import_decimal(product.default_unit_price)
+
+        if base_price is None:
+            return None
+
+        return base_price * factor
+
+    return None
+
+
+def _build_product_import_preview(
+    extracted: dict,
+    products_by_name: dict[str, list[Product]],
+) -> dict:
+    """
+    Build a common product-import preview row.
+
+    Shared by PDF and Excel imports so matching and price
+    comparisons behave consistently.
+    """
+    product_name = extracted["name"]
+    normalized_name = normalize_match_text(product_name)
+
+    candidates = products_by_name.get(normalized_name, [])
+
+    match_status = "new"
+    matched_product = None
+    candidate_ids = []
+
+    if len(candidates) == 1:
+        match_status = "exact_match"
+        matched_product = candidates[0]
+    elif len(candidates) > 1:
+        match_status = "ambiguous"
+        candidate_ids = [
+            str(candidate.id)
+            for candidate in candidates
+        ]
+
+    supplier_base_price = None
+    base_price_column_count = 0
+
+    for unit in extracted.get("selling_units", []):
+        factor = _import_decimal(unit.get("factor_to_base"))
+
+        if factor == Decimal("1"):
+            base_price_column_count += 1
+            supplier_base_price = _import_decimal(unit.get("rate"))
+
+    if base_price_column_count > 1:
+        supplier_base_price = None
+
+    current_base_price = None
+    base_price_changed = None
+    base_unit_matches = None
+
+    if matched_product is not None:
+        extracted_base_unit = extracted.get("base_unit")
+
+        base_unit_matches = (
+            normalize_match_text(matched_product.base_unit)
+            == normalize_match_text(extracted_base_unit)
+            if extracted_base_unit
+            else False
+        )
+
+        if base_unit_matches:
+            current_base_price = _import_decimal(
+                matched_product.default_unit_price
+            )
+
+            if (
+                supplier_base_price is not None
+                and current_base_price is not None
+            ):
+                base_price_changed = (
+                    supplier_base_price != current_base_price
+                )
+
+    preview_units = []
+
+    for unit in extracted.get("selling_units", []):
+        supplier_rate = _import_decimal(unit.get("rate"))
+
+        current_rate = None
+        price_changed = None
+
+        if matched_product is not None and base_unit_matches:
+            current_rate = _get_current_selling_unit_price(
+                matched_product,
+                unit["name"],
+            )
+
+            if supplier_rate is not None and current_rate is not None:
+                price_changed = supplier_rate != current_rate
+
+        preview_units.append({
+            "name": unit["name"],
+            "factor_to_base": unit.get("factor_to_base"),
+            "supplier_rate": _format_import_price(supplier_rate),
+            "current_rate": _format_import_price(current_rate),
+            "price_changed": price_changed,
+        })
+
+    row_warnings = list(extracted.get("warnings", []))
+
+    if extracted.get("base_unit") is None:
+        row_warnings.append(
+            "Base unit could not be determined. Manual review required."
+        )
+
+    if base_price_column_count == 0:
+        row_warnings.append(
+            "No selling-unit column represents exactly one base unit. "
+            "A base-unit selling price cannot be determined."
+        )
+    elif base_price_column_count > 1:
+        row_warnings.append(
+            "Multiple selling-unit columns represent one base unit. "
+            "Select the correct base-unit price manually."
+        )
+
+    if matched_product is not None and not base_unit_matches:
+        row_warnings.append(
+            "Existing product uses a different base unit. "
+            "Price comparison requires manual review."
+        )
+
+    if match_status == "ambiguous":
+        row_warnings.append(
+            "Multiple existing products have this exact name. "
+            "Select the correct product manually."
+        )
+
+    supplier_purchase_price = _import_decimal(
+        extracted.get("purchase_price")
+    )
+
+    current_purchase_price = (
+        _import_decimal(matched_product.purchase_price)
+        if matched_product is not None
+        else None
+    )
+
+    purchase_price_changed = None
+
+    if (
+        supplier_purchase_price is not None
+        and current_purchase_price is not None
+    ):
+        purchase_price_changed = (
+            supplier_purchase_price != current_purchase_price
+        )
+
+    return {
+        "serial_number": extracted["serial_number"],
+        "name": product_name,
+        "source_page": extracted.get("source_page"),
+        "source_row": extracted.get("source_row"),
+        "base_unit": extracted.get("base_unit"),
+        "match_status": match_status,
+        "matched_product_id": (
+            str(matched_product.id)
+            if matched_product is not None
+            else None
+        ),
+        "matched_product_name": (
+            matched_product.name
+            if matched_product is not None
+            else None
+        ),
+        "candidate_product_ids": candidate_ids,
+        "current_base_unit": (
+            matched_product.base_unit
+            if matched_product is not None
+            else None
+        ),
+        "supplier_base_price": _format_import_price(
+            supplier_base_price
+        ),
+        "current_base_price": _format_import_price(
+            current_base_price
+        ),
+        "base_price_changed": base_price_changed,
+        "base_unit_matches": base_unit_matches,
+        "selling_units": preview_units,
+        "purchase_price": extracted.get("purchase_price"),
+        "supplier_purchase_price": _format_import_price(
+            supplier_purchase_price
+        ),
+        "current_purchase_price": _format_import_price(
+            current_purchase_price
+        ),
+        "purchase_price_changed": purchase_price_changed,
+        "opening_stock": extracted.get("opening_stock"),
+        "warnings": row_warnings,
+    }
+
+
+@router.post("/products/import/pdf/preview")
+async def preview_product_pdf_import(
+    file: UploadFile = File(...),
+    user_id: UUID = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    business = get_user_business(user_id, db)
+
+    # Validate the filename.
+    filename = file.filename or ""
+
+    if not filename.lower().endswith(".pdf"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Please upload a PDF file.",
+        )
+
+    # Read at most one byte beyond the permitted limit.
+    pdf_bytes = await file.read(
+        MAX_PRODUCT_PDF_SIZE_BYTES + 1
+    )
+
+    if len(pdf_bytes) > MAX_PRODUCT_PDF_SIZE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="PDF file exceeds the 15 MB upload limit.",
+        )
+
+    # Check the PDF signature rather than trusting the MIME type.
+    if not pdf_bytes.startswith(b"%PDF-"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The uploaded file is not a valid PDF.",
+        )
+
+    try:
+        extraction = extract_product_pdf(pdf_bytes)
+    except ProductPDFImportError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    # Only load products belonging to the authenticated business.
+    existing_products = db.scalars(
+        select(Product).where(
+            Product.business_id == business.id
+        )
+    ).all()
+
+    products_by_name: dict[str, list[Product]] = {}
+
+    for product in existing_products:
+        key = normalize_match_text(product.name)
+
+        if key:
+            products_by_name.setdefault(key, []).append(product)
+
+    preview_products = [
+        _build_product_import_preview(
+            extracted,
+            products_by_name,
+        )
+        for extracted in extraction["products"]
+    ]
+
+    return {
+        "filename": filename,
+        "page_count": extraction["page_count"],
+        "processed_pages": extraction["processed_pages"],
+        "product_count": extraction["product_count"],
+        "price_columns": extraction["price_columns"],
+        "products": preview_products,
+        "warnings": extraction["warnings"],
+    }
+
+@router.post("/products/import/excel/preview")
+async def preview_product_excel_import(
+    file: UploadFile = File(...),
+    user_id: UUID = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    business = get_user_business(user_id, db)
+
+    filename = file.filename or ""
+
+    if not filename.lower().endswith(".xlsx"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Please upload an .xlsx Excel workbook.",
+        )
+
+    excel_bytes = await file.read(
+        MAX_PRODUCT_EXCEL_SIZE_BYTES + 1
+    )
+
+    if not excel_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The uploaded Excel file is empty.",
+        )
+
+    if len(excel_bytes) > MAX_PRODUCT_EXCEL_SIZE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Excel file exceeds the 15 MB upload limit.",
+        )
+
+    if not excel_bytes.startswith(b"PK"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The uploaded file is not a valid XLSX workbook.",
+        )
+
+    try:
+        extraction = extract_product_excel(excel_bytes)
+    except ProductExcelImportError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    existing_products = db.scalars(
+        select(Product).where(
+            Product.business_id == business.id
+        )
+    ).all()
+
+    products_by_name: dict[str, list[Product]] = {}
+
+    for product in existing_products:
+        key = normalize_match_text(product.name)
+
+        if key:
+            products_by_name.setdefault(key, []).append(product)
+
+    preview_products = [
+        _build_product_import_preview(
+            extracted,
+            products_by_name,
+        )
+        for extracted in extraction["products"]
+    ]
+
+    return {
+        "filename": filename,
+        "sheet_name": extraction["sheet_name"],
+        "product_count": extraction["product_count"],
+        "price_columns": extraction["price_columns"],
+        "has_purchase_price_column": extraction[
+            "has_purchase_price_column"
+        ],
+        "has_opening_stock_column": extraction[
+            "has_opening_stock_column"
+        ],
+        "products": preview_products,
+        "warnings": extraction["warnings"],
+    }
+
+
+@router.post("/products/import/excel/confirm")
+async def confirm_product_excel_import(
+    file: UploadFile = File(...),
+    decisions_json: str = Form(...),
+    user_id: UUID = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    business = get_user_business(user_id, db)
+
+    filename = file.filename or ""
+
+    if not filename.lower().endswith(".xlsx"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Please upload an .xlsx Excel workbook.",
+        )
+
+    excel_bytes = await file.read(
+        MAX_PRODUCT_EXCEL_SIZE_BYTES + 1
+    )
+
+    if not excel_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The uploaded Excel file is empty.",
+        )
+
+    if len(excel_bytes) > MAX_PRODUCT_EXCEL_SIZE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Excel file exceeds the 15 MB upload limit.",
+        )
+
+    if not excel_bytes.startswith(b"PK"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The uploaded file is not a valid XLSX workbook.",
+        )
+
+    try:
+        extraction = extract_product_excel(excel_bytes)
+    except ProductExcelImportError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    try:
+        decisions = json.loads(decisions_json)
+    except (json.JSONDecodeError, TypeError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid import decisions.",
+        )
+
+    if not isinstance(decisions, list):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Import decisions must be a list.",
+        )
+
+    extracted_products = extraction["products"]
+
+    extracted_by_serial = {
+        item["serial_number"]: item
+        for item in extracted_products
+    }
+
+    if len(extracted_by_serial) != len(extracted_products):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The Excel file contains duplicate product serial numbers.",
+        )
+
+    decisions_by_serial = {}
+
+    for decision in decisions:
+        if not isinstance(decision, dict):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Each import decision must be an object.",
+            )
+
+        serial = decision.get("serial_number")
+        action = decision.get("action")
+
+        if (
+            not isinstance(serial, int)
+            or isinstance(serial, bool)
+            or serial not in extracted_by_serial
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid product serial number: {serial}.",
+            )
+
+        if serial in decisions_by_serial:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Duplicate decision for product {serial}.",
+            )
+
+        if action not in {"create", "update", "skip"}:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid action for product {serial}.",
+            )
+
+        decisions_by_serial[serial] = decision
+
+    if set(decisions_by_serial) != set(extracted_by_serial):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Provide exactly one decision for every Excel product.",
+        )
+
+    created_count = 0
+    updated_count = 0
+    skipped_count = 0
+    initialized_stock_count = 0
+    processed_product_ids = set()
+
+    try:
+        for serial, extracted in extracted_by_serial.items():
+            decision = decisions_by_serial[serial]
+            action = decision["action"]
+
+            if action == "skip":
+                skipped_count += 1
+                continue
+
+            # Do not silently ignore invalid supplier data.
+            invalid_warnings = [
+                warning
+                for warning in extracted.get("warnings", [])
+                if "invalid" in warning.casefold()
+            ]
+
+            if invalid_warnings:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"Product {serial} ({extracted['name']}) "
+                        f"contains invalid data: {'; '.join(invalid_warnings)}"
+                    ),
+                )
+
+            base_unit = extracted.get("base_unit")
+
+            if not base_unit:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"Product {serial} ({extracted['name']}) "
+                        "has no valid base unit."
+                    ),
+                )
+
+            # Exactly one factor-1 unit must provide the base price.
+            base_price_units = [
+                unit
+                for unit in extracted["selling_units"]
+                if _import_decimal(
+                    unit.get("factor_to_base")
+                ) == Decimal("1")
+            ]
+
+            if len(base_price_units) != 1:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"Product {serial} ({extracted['name']}) "
+                        "must have exactly one base-unit price."
+                    ),
+                )
+
+            base_price = _import_decimal(
+                base_price_units[0].get("rate")
+            )
+
+            if base_price is None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"Product {serial} ({extracted['name']}) "
+                        "has no valid base-unit price."
+                    ),
+                )
+
+            # Prepare independently priced alternative selling units.
+            supplier_units = []
+
+            for unit in extracted["selling_units"]:
+                factor = _import_decimal(
+                    unit.get("factor_to_base")
+                )
+                rate = _import_decimal(unit.get("rate"))
+
+                if factor is None or factor <= 0:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=(
+                            f"Invalid conversion factor for "
+                            f"{extracted['name']} / {unit['name']}."
+                        ),
+                    )
+
+                # A blank alternative selling-unit price means that
+                # this unit is not imported/configured.
+                if rate is None:
+                    continue
+
+                if factor == Decimal("1"):
+                    continue
+
+                try:
+                    supplier_unit = SellingUnitInput(
+                        name=unit["name"],
+                        factor=factor,
+                        price=rate,
+                    )
+                except Exception as exc:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=(
+                            f"Invalid selling unit for "
+                            f"{extracted['name']}: {exc}"
+                        ),
+                    ) from exc
+
+                supplier_units.append(supplier_unit)
+
+            normalized_base, normalized_units = (
+                validate_selling_units(
+                    base_unit,
+                    supplier_units,
+                )
+            )
+
+            supplier_purchase_price = _import_decimal(
+                extracted.get("purchase_price")
+            )
+
+            opening_stock = _import_decimal(
+                extracted.get("opening_stock")
+            )
+
+            initialize_stock = decision.get(
+                "initialize_stock",
+                False,
+            )
+
+            if not isinstance(initialize_stock, bool):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        f"Invalid stock decision for product {serial}."
+                    ),
+                )
+
+            if initialize_stock and opening_stock is None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"Product {serial} has no opening stock value."
+                    ),
+                )
+
+            product = None
+
+            if action == "create":
+                # Recheck for duplicates at confirmation time.
+                existing_products = db.scalars(
+                    select(Product).where(
+                        Product.business_id == business.id
+                    )
+                ).all()
+
+                duplicate = any(
+                    normalize_match_text(existing.name)
+                    == normalize_match_text(extracted["name"])
+                    for existing in existing_products
+                )
+
+                if duplicate:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=(
+                            f"Product '{extracted['name']}' already exists. "
+                            "Refresh the preview and select update instead."
+                        ),
+                    )
+
+                product = Product(
+                    business_id=business.id,
+                    name=extracted["name"].strip(),
+                    description=extracted.get("description"),
+                    purchase_price=supplier_purchase_price,
+                    default_unit_price=base_price,
+                    base_unit=normalized_base,
+                    selling_units=normalized_units,
+                    is_stock_tracked=False,
+                    stock_quantity=None,
+                )
+
+                db.add(product)
+                db.flush()
+
+                created_count += 1
+
+            else:
+                product_id_value = decision.get("product_id")
+
+                try:
+                    product_id = UUID(str(product_id_value))
+                except (ValueError, TypeError, AttributeError):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=(
+                            f"An existing product ID is required "
+                            f"for Excel row {serial}."
+                        ),
+                    )
+
+                if product_id in processed_product_ids:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=(
+                            "The same existing product cannot be "
+                            "updated by multiple Excel rows."
+                        ),
+                    )
+
+                product = db.scalar(
+                    select(Product)
+                    .where(
+                        Product.id == product_id,
+                        Product.business_id == business.id,
+                    )
+                    .with_for_update()
+                )
+
+                if product is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail=(
+                            f"Product selected for row {serial} "
+                            "was not found."
+                        ),
+                    )
+
+                if (
+                    normalize_match_text(product.name)
+                    != normalize_match_text(extracted["name"])
+                ):
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=(
+                            f"Product name mismatch for row {serial}."
+                        ),
+                    )
+
+                if (
+                    normalize_match_text(product.base_unit)
+                    != normalize_match_text(base_unit)
+                ):
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=(
+                            f"Base-unit mismatch for '{product.name}'. "
+                            "Existing inventory configuration was not changed."
+                        ),
+                    )
+
+                # Preserve the existing unit configuration.
+                updated_units = [
+                    dict(unit)
+                    for unit in (product.selling_units or [])
+                ]
+
+                existing_units = {
+                    normalize_match_text(unit.get("name")): unit
+                    for unit in updated_units
+                }
+
+                updated_units_by_name = {
+                    normalize_match_text(unit.get("name")): unit
+                    for unit in updated_units
+                }
+
+                for supplier_unit in supplier_units:
+                    key = normalize_match_text(supplier_unit.name)
+                    existing_unit = existing_units.get(key)
+
+                    if existing_unit is None:
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail=(
+                                f"Supplier unit '{supplier_unit.name}' "
+                                f"is not configured for '{product.name}'."
+                            ),
+                        )
+
+                    existing_factor = _import_decimal(
+                        existing_unit.get("factor")
+                    )
+
+                    if existing_factor != supplier_unit.factor:
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail=(
+                                f"Conversion factor mismatch for "
+                                f"'{product.name}' / '{supplier_unit.name}'."
+                            ),
+                        )
+
+                    updated_units_by_name[key]["price"] = format(
+                        supplier_unit.price.quantize(
+                            Decimal("0.01")
+                        ),
+                        "f",
+                    )
+
+                product.default_unit_price = base_price
+                product.selling_units = updated_units
+
+                if supplier_purchase_price is not None:
+                    product.purchase_price = supplier_purchase_price
+
+                processed_product_ids.add(product.id)
+                updated_count += 1
+
+            # Opening stock must be recorded as a ledger movement.
+            # Never overwrite an already initialized stock balance.
+            if initialize_stock:
+                idempotency_key = decision.get(
+                    "stock_idempotency_key"
+                )
+
+                if (
+                    not isinstance(idempotency_key, str)
+                    or not idempotency_key.strip()
+                    or len(idempotency_key) > 200
+                ):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=(
+                            f"A valid stock idempotency key is required "
+                            f"for product {serial}."
+                        ),
+                    )
+
+                opening_quantity = to_base_stock_quantity(
+                    opening_stock,
+                    Decimal("1"),
+                )
+
+                reason = (
+                    f"Opening stock imported from Excel: "
+                    f"{filename}, row {extracted.get('source_row')}"
+                )[:500]
+
+                existing_movement = find_idempotent_stock_movement(
+                    db=db,
+                    business_id=business.id,
+                    idempotency_key=idempotency_key.strip(),
+                )
+
+                if existing_movement is not None:
+                    # A retry must match the original operation exactly.
+                    if (
+                        existing_movement.product_id != product.id
+                        or existing_movement.movement_type != "opening"
+                        or existing_movement.quantity_delta != opening_quantity
+                        or existing_movement.stock_after != opening_quantity
+                        or existing_movement.entered_quantity != opening_stock
+                        or existing_movement.entered_unit != normalized_base
+                        or existing_movement.conversion_factor != Decimal("1")
+                        or existing_movement.reason != reason
+                    ):
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail=(
+                                "Stock idempotency key was already used "
+                                "for a different operation."
+                            ),
+                        )
+
+                    # The product balance and ledger must agree.
+                    if product.stock_quantity != existing_movement.stock_after:
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail=(
+                                f"Stock ledger and product balance disagree "
+                                f"for '{product.name}'. Manual review is required."
+                            ),
+                        )
+
+                    initialized_stock_count += 1
+
+                else:
+                    if product.stock_quantity is not None:
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail=(
+                                f"Stock for '{product.name}' is already "
+                                "initialized. Existing stock was preserved."
+                            ),
+                        )
+
+                    product.stock_quantity = opening_quantity
+                    product.is_stock_tracked = True
+
+                    db.add(
+                        InventoryMovement(
+                            business_id=business.id,
+                            product_id=product.id,
+                            quantity_delta=opening_quantity,
+                            stock_after=opening_quantity,
+                            movement_type="opening",
+                            reason=reason,
+                            idempotency_key=idempotency_key.strip(),
+                            entered_quantity=opening_stock,
+                            entered_unit=normalized_base,
+                            conversion_factor=Decimal("1"),
+                        )
+                    )
+
+                    initialized_stock_count += 1
+
+        db.commit()
+
+    except IntegrityError as exc:
+        db.rollback()
+
+        if is_idempotency_constraint_error(exc):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "A stock import operation with this idempotency key "
+                    "already exists. Refresh the product catalogue and "
+                    "review the import before retrying."
+                ),
+            ) from exc
+
+        raise
+
+    except Exception:
+        db.rollback()
+        raise
+
+    return {
+        "message": "Excel product import completed.",
+        "created": created_count,
+        "updated": updated_count,
+        "skipped": skipped_count,
+        "stock_initialized": initialized_stock_count,
+        "total": len(extracted_products),
+    }
+
+
+@router.post("/products/import/pdf/confirm")
+async def confirm_product_pdf_import(
+    file: UploadFile = File(...),
+    decisions_json: str = Form(...),
+    user_id: UUID = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    business = get_user_business(user_id, db)
+
+    filename = file.filename or ""
+    if not filename.lower().endswith(".pdf"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Please upload a PDF file.",
+        )
+
+    pdf_bytes = await file.read(MAX_PRODUCT_PDF_SIZE_BYTES + 1)
+
+    if len(pdf_bytes) > MAX_PRODUCT_PDF_SIZE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="PDF file exceeds the 15 MB upload limit.",
+        )
+
+    if not pdf_bytes.startswith(b"%PDF-"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The uploaded file is not a valid PDF.",
+        )
+
+    try:
+        extraction = extract_product_pdf(pdf_bytes)
+    except ProductPDFImportError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    try:
+        decisions = json.loads(decisions_json)
+    except (json.JSONDecodeError, TypeError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid import decisions.",
+        )
+
+    if not isinstance(decisions, list):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Import decisions must be a list.",
+        )
+
+    extracted_products = extraction["products"]
+    extracted_by_serial = {
+        item["serial_number"]: item
+        for item in extracted_products
+    }
+
+    if len(extracted_by_serial) != len(extracted_products):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The PDF contains duplicate serial numbers. "
+                   "Resolve these before importing.",
+        )
+
+    decisions_by_serial = {}
+
+    for decision in decisions:
+        if not isinstance(decision, dict):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Each import decision must be an object.",
+            )
+
+        serial = decision.get("serial_number")
+        action = decision.get("action")
+
+        if (
+            not isinstance(serial, int)
+            or isinstance(serial, bool)
+            or serial not in extracted_by_serial
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid product serial number: {serial}.",
+            )
+
+        if serial in decisions_by_serial:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Duplicate decision for serial number {serial}.",
+            )
+
+        if action not in {"create", "update", "skip"}:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid action for serial number {serial}.",
+            )
+
+        decisions_by_serial[serial] = decision
+
+    if set(decisions_by_serial) != set(extracted_by_serial):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Provide exactly one decision for every PDF product.",
+        )
+
+    updated_product_ids = set()
+    created_count = 0
+    updated_count = 0
+    skipped_count = 0
+
+    try:
+        for serial, extracted in extracted_by_serial.items():
+            decision = decisions_by_serial[serial]
+            action = decision["action"]
+
+            if action == "skip":
+                skipped_count += 1
+                continue
+
+            base_unit = extracted["base_unit"]
+
+            if not base_unit:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"Product {serial} ({extracted['name']}) "
+                        "has no valid base unit. Manual review required."
+                    ),
+                )
+
+            # Find the supplier's base-unit price.
+            base_price_units = []
+
+            for unit in extracted["selling_units"]:
+                factor = _import_decimal(
+                    unit.get("factor_to_base")
+                )
+
+                if factor == Decimal("1"):
+                    base_price_units.append(unit)
+
+            if len(base_price_units) != 1:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"Product {serial} ({extracted['name']}) "
+                        "does not have exactly one identifiable "
+                        "base-unit price."
+                    ),
+                )
+
+            base_price = _import_decimal(
+                base_price_units[0].get("rate")
+            )
+
+            if base_price is None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"Product {serial} ({extracted['name']}) "
+                        "has no valid base-unit price."
+                    ),
+                )
+
+            # Prepare independently priced alternative units.
+            supplier_units = []
+
+            for unit in extracted["selling_units"]:
+                factor = _import_decimal(
+                    unit.get("factor_to_base")
+                )
+
+                rate = _import_decimal(unit.get("rate"))
+
+                if factor is None or factor <= 0:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=(
+                            f"Invalid conversion factor for "
+                            f"{extracted['name']} ({unit['name']})."
+                        ),
+                    )
+
+                if rate is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=(
+                            f"Missing supplier rate for "
+                            f"{extracted['name']} ({unit['name']})."
+                        ),
+                    )
+
+                # The factor-1 column supplies default_unit_price.
+                if factor == Decimal("1"):
+                    continue
+
+                try:
+                    selling_unit = SellingUnitInput(
+                        name=unit["name"],
+                        factor=factor,
+                        price=rate,
+                    )
+                except Exception as exc:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=(
+                            f"Invalid selling-unit configuration for "
+                            f"{extracted['name']}: {exc}"
+                        ),
+                    ) from exc
+
+                supplier_units.append(selling_unit)
+
+            if action == "create":
+                # Recheck duplicates at confirmation time.
+                same_name_products = db.scalars(
+                    select(Product).where(
+                        Product.business_id == business.id
+                    )
+                ).all()
+
+                duplicate = any(
+                    normalize_match_text(product.name)
+                    == normalize_match_text(extracted["name"])
+                    for product in same_name_products
+                )
+
+                if duplicate:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=(
+                            f"Product '{extracted['name']}' already "
+                            "exists. Review it as an update instead."
+                        ),
+                    )
+
+                normalized_base, normalized_units = (
+                    validate_selling_units(
+                        base_unit,
+                        supplier_units,
+                    )
+                )
+
+                product = Product(
+                    business_id=business.id,
+                    name=extracted["name"].strip(),
+                    description=None,
+                    purchase_price=_import_decimal(
+                        extracted.get("purchase_price")
+                    ),
+                    default_unit_price=base_price,
+                    base_unit=normalized_base,
+                    selling_units=normalized_units,
+                    is_stock_tracked=False,
+                    stock_quantity=None,
+                )
+
+                db.add(product)
+                db.flush()
+
+                created_count += 1
+                continue
+
+            # Existing product update.
+            product_id_value = decision.get("product_id")
+
+            try:
+                product_id = UUID(str(product_id_value))
+            except (ValueError, TypeError, AttributeError):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        f"An existing product ID is required "
+                        f"for serial number {serial}."
+                    ),
+                )
+
+            if product_id in updated_product_ids:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="The same existing product cannot be "
+                           "updated by multiple PDF rows.",
+                )
+
+            product = db.scalar(
+                select(Product)
+                .where(
+                    Product.id == product_id,
+                    Product.business_id == business.id,
+                )
+                .with_for_update()
+            )
+
+            if product is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=(
+                        f"Existing product for serial number "
+                        f"{serial} was not found."
+                    ),
+                )
+
+            if (
+                normalize_match_text(product.name)
+                != normalize_match_text(extracted["name"])
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"Product name mismatch for serial number {serial}."
+                    ),
+                )
+
+            if (
+                normalize_match_text(product.base_unit)
+                != normalize_match_text(base_unit)
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"Base unit mismatch for '{product.name}'. "
+                        "Existing inventory configuration was not changed."
+                    ),
+                )
+
+            # Update prices only when supplier units exactly match
+            # the existing unit names and conversion factors.
+            existing_units = {
+                normalize_match_text(unit.get("name")): unit
+                for unit in (product.selling_units or [])
+            }
+
+            updated_units = []
+
+            for unit in (product.selling_units or []):
+                updated_units.append(dict(unit))
+
+            updated_units_by_name = {
+                normalize_match_text(unit.get("name")): unit
+                for unit in updated_units
+            }
+
+            for supplier_unit in supplier_units:
+                key = normalize_match_text(supplier_unit.name)
+                existing = existing_units.get(key)
+
+                if existing is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=(
+                            f"Supplier unit '{supplier_unit.name}' "
+                            f"is not configured for '{product.name}'. "
+                            "Review the unit configuration manually."
+                        ),
+                    )
+
+                existing_factor = _import_decimal(
+                    existing.get("factor")
+                )
+
+                if existing_factor != supplier_unit.factor:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=(
+                            f"Conversion factor mismatch for "
+                            f"'{product.name}' / '{supplier_unit.name}'. "
+                            "Existing inventory configuration was not changed."
+                        ),
+                    )
+
+                target_unit = updated_units_by_name[key]
+                target_unit["price"] = format(
+                    supplier_unit.price.quantize(Decimal("0.01")),
+                    "f",
+                )
+
+            product.default_unit_price = base_price
+            product.selling_units = updated_units
+
+            supplier_purchase_price = _import_decimal(
+                extracted.get("purchase_price")
+            )
+
+            if supplier_purchase_price is not None:
+                product.purchase_price = supplier_purchase_price
+
+            updated_product_ids.add(product_id)
+            updated_count += 1
+
+        db.commit()
+
+    except Exception:
+        db.rollback()
+        raise
+
+    return {
+        "message": "PDF product import completed.",
+        "created": created_count,
+        "updated": updated_count,
+        "skipped": skipped_count,
+        "total": len(extracted_products),
+    }
 
 
 @router.get(
@@ -2714,6 +4376,11 @@ async def update_product(
             SellingUnitInput(
                 name=str(unit["name"]),
                 factor=Decimal(str(unit["factor"])),
+                price=(
+                    Decimal(str(unit["price"]))
+                    if unit.get("price") is not None
+                    else None
+                ),
             )
             for unit in (product.selling_units or [])
         ]

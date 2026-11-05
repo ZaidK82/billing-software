@@ -73,6 +73,7 @@ function ProductForm({
   );
   const [newUnitName, setNewUnitName] = useState("");
   const [newUnitFactor, setNewUnitFactor] = useState("");
+  const [newUnitPrice, setNewUnitPrice] = useState("");
   const [unitError, setUnitError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -92,12 +93,14 @@ function ProductForm({
     setSellingUnits(product?.selling_units ?? []);
     setNewUnitName("");
     setNewUnitFactor("");
+    setNewUnitPrice("");
     setUnitError(null);
   }, [product]);
 
 function handleAddSellingUnit() {
   const name = newUnitName.trim();
   const factor = Number(newUnitFactor);
+  const priceText = newUnitPrice.trim();
 
   if (!name) {
     setUnitError("Enter a selling unit name.");
@@ -135,10 +138,54 @@ function handleAddSellingUnit() {
     return;
   }
 
-  setSellingUnits((current) => [...current, { name, factor }]);
+  let price: number | undefined;
+
+  if (priceText !== "") {
+    price = Number(priceText);
+
+    if (
+      !Number.isFinite(price) ||
+      price < 0 ||
+      !Number.isInteger(price * 100)
+    ) {
+      setUnitError("Enter a valid selling price with at most 2 decimal places.");
+      return;
+    }
+  }
+
+  setSellingUnits((current) => [
+    ...current,
+    {
+      name,
+      factor,
+      ...(price !== undefined ? { price } : {}),
+    },
+  ]);
+
   setNewUnitName("");
   setNewUnitFactor("");
+  setNewUnitPrice("");
   setUnitError(null);
+}
+
+function updateSellingUnitPrice(name: string, value: string) {
+  setSellingUnits((current) =>
+    current.map((unit) => {
+      if (unit.name !== name) {
+        return unit;
+      }
+
+      if (value.trim() === "") {
+        const { price: _price, ...unitWithoutPrice } = unit;
+        return unitWithoutPrice;
+      }
+
+      return {
+        ...unit,
+        price: value,
+      };
+    }),
+  );
 }
 
   async function handleSubmit(
@@ -280,11 +327,39 @@ function handleAddSellingUnit() {
                       key={unit.name}
                       className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2"
                     >
-                      <div className="text-sm text-slate-700">
-                        <span className="font-medium">{unit.name}</span>
-                        <span className="ml-2 text-slate-500">
-                          1 {unit.name} = {unit.factor} {baseUnit || "base units"}
-                        </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm text-slate-700">
+                          <span className="font-medium">{unit.name}</span>
+                          <span className="ml-2 text-slate-500">
+                            1 {unit.name} = {unit.factor} {baseUnit || "base units"}
+                          </span>
+                        </div>
+
+                        <div className="mt-2">
+                          <label
+                            htmlFor={`selling-unit-price-${unit.name}`}
+                            className="mb-1 block text-xs font-medium text-slate-600"
+                          >
+                            Independent selling price (optional)
+                          </label>
+
+                          <input
+                            id={`selling-unit-price-${unit.name}`}
+                            type="number"
+                            min="0"
+                            max="9999999999.99"
+                            step="0.01"
+                            value={unit.price ?? ""}
+                            onChange={(event) =>
+                              updateSellingUnitPrice(
+                                unit.name,
+                                event.target.value,
+                              )
+                            }
+                            className="min-h-10 w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500"
+                            placeholder="Leave empty for proportional price"
+                          />
+                        </div>
                       </div>
                       <button
                         type="button"
@@ -303,7 +378,7 @@ function handleAddSellingUnit() {
                 </div>
               )}
 
-            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <div>
               <label
                 htmlFor="selling-unit-name"
@@ -377,6 +452,30 @@ function handleAddSellingUnit() {
                     }}
                     className="min-h-11 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                     placeholder="e.g. 12"
+                  />
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="selling-unit-price"
+                    className="mb-1 block text-sm font-medium text-slate-700"
+                  >
+                    Independent selling price
+                  </label>
+
+                  <input
+                    id="selling-unit-price"
+                    type="number"
+                    min="0"
+                    max="9999999999.99"
+                    step="0.01"
+                    value={newUnitPrice}
+                    onChange={(event) => {
+                      setNewUnitPrice(event.target.value);
+                      setUnitError(null);
+                    }}
+                    className="min-h-11 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    placeholder="Optional"
                   />
                 </div>
               </div>

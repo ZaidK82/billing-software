@@ -369,6 +369,7 @@ function BillPreview({
         customer_name: bill.customer_name ?? "",
         customer_phone: bill.customer_phone,
         customer_address: bill.customer_address,
+        shipping_charge: Number(bill.shipping_charge ?? 0),
         invoice_columns: bill.invoice_columns,
         appearance_settings: {
           ...DEFAULT_INVOICE_APPEARANCE,
@@ -1184,6 +1185,13 @@ function BillPreview({
                 <span>Subtotal</span>
                 <span className="whitespace-nowrap tabular-nums">
                   {formatMoney(bill.subtotal)}
+                </span>
+              </div>
+
+              <div className="flex justify-between gap-6 py-2 text-sm text-slate-600">
+                <span>Shipping</span>
+                <span className="whitespace-nowrap tabular-nums">
+                  {formatMoney(bill.shipping_charge ?? 0)}
                 </span>
               </div>
 

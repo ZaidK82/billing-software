@@ -1326,6 +1326,7 @@ def build_invoice_pdf(
     # -----------------------------------------------------------------------
 
     subtotal = _format_money(bill.subtotal)
+    shipping_charge = _format_money(bill.shipping_charge)
     total = _format_money(bill.total)
     amount_in_words = _amount_in_words(bill.total)
 
@@ -1339,6 +1340,17 @@ def build_invoice_pdf(
                 ),
                 _paragraph(
                     subtotal,
+                    subtotal_value_style,
+                ),
+            ],
+            [
+                "",
+                _paragraph(
+                    "Shipping",
+                    total_label_style,
+                ),
+                _paragraph(
+                    shipping_charge,
                     subtotal_value_style,
                 ),
             ],

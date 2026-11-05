@@ -264,6 +264,7 @@ export type CreateBillRequest = {
   customer_name: string;
   customer_phone: string | null;
   customer_address: string | null;
+  shipping_charge: number;
   invoice_columns?: InvoiceColumn[];
   appearance_settings: InvoiceAppearanceSettings;
   items: CreateBillItem[];
@@ -293,6 +294,7 @@ export type SavedBill = {
   customer_phone: string | null;
   customer_address: string | null;
   subtotal: string;
+  shipping_charge: string;
   total: string;
   created_at: string;
   invoice_columns: InvoiceColumn[];
@@ -501,6 +503,25 @@ export type Customer = {
   updated_at: string;
 };
 
+export type CustomerMatchRequest = {
+  name?: string | null;
+  phone?: string | null;
+};
+
+export type CustomerMatchCandidate = {
+  id: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+};
+
+export type CustomerMatchResponse = {
+  status: "matched" | "ambiguous" | "not_found";
+  match_type: "phone" | "name" | null;
+  candidates: CustomerMatchCandidate[];
+};
+
 export type CreateCustomerRequest = {
   name: string;
   phone: string | null;
@@ -529,6 +550,34 @@ export async function getCustomers(
     throw new Error(
       body?.detail ||
         `Customers request failed: ${response.status}`,
+    );
+  }
+
+  return response.json();
+}
+
+export async function matchCustomer(
+  accessToken: string,
+  payload: CustomerMatchRequest,
+): Promise<CustomerMatchResponse> {
+  const response = await fetch(
+    `${API_URL}/customers/match`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    },
+  );
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+
+    throw new Error(
+      body?.detail ||
+        `Customer matching failed: ${response.status}`,
     );
   }
 
@@ -595,6 +644,7 @@ export async function updateCustomer(
 export type SellingUnit = {
   name: string;
   factor: number | string;
+  price?: number | string | null;
 };
 
 export type Product = {
@@ -609,6 +659,143 @@ export type Product = {
   stock_quantity: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type ProductPDFImportUnit = {
+  name: string;
+  factor_to_base: string | null;
+  supplier_rate: string | null;
+  current_rate: string | null;
+  price_changed: boolean | null;
+};
+
+export type ProductPDFImportProduct = {
+  serial_number: number;
+  name: string;
+  source_page: number;
+  base_unit: string | null;
+  match_status: "new" | "exact_match" | "ambiguous";
+  matched_product_id: string | null;
+  matched_product_name: string | null;
+  candidate_product_ids: string[];
+  current_base_unit: string | null;
+  supplier_base_price: string | null;
+  current_base_price: string | null;
+  base_price_changed: boolean | null;
+  base_unit_matches: boolean | null;
+  selling_units: ProductPDFImportUnit[];
+  purchase_price: string | null;
+  supplier_purchase_price: string | null;
+  current_purchase_price: string | null;
+  purchase_price_changed: boolean | null;
+  opening_stock: string | null;
+  warnings: string[];
+};
+
+export type ProductPDFImportPreview = {
+  filename: string;
+  page_count: number;
+  processed_pages: number;
+  product_count: number;
+  price_columns: string[];
+  products: ProductPDFImportProduct[];
+  warnings: string[];
+};
+
+export type ProductPDFImportDecision = {
+  serial_number: number;
+  action: "create" | "update" | "skip";
+  product_id?: string;
+};
+
+export type ProductPDFImportResult = {
+  message: string;
+  created: number;
+  updated: number;
+  skipped: number;
+  total: number;
+};
+
+export type ProductExcelImportUnit = {
+  name: string;
+  factor_to_base: string | null;
+  supplier_rate: string | null;
+  current_rate: string | null;
+  price_changed: boolean | null;
+};
+
+export type ProductExcelImportProduct = {
+  serial_number: number;
+  name: string;
+  source_page: number | null;
+  source_row: number;
+  base_unit: string | null;
+  match_status: "new" | "exact_match" | "ambiguous";
+  matched_product_id: string | null;
+  matched_product_name: string | null;
+  candidate_product_ids: string[];
+  current_base_unit: string | null;
+  supplier_base_price: string | null;
+  current_base_price: string | null;
+  base_price_changed: boolean | null;
+  base_unit_matches: boolean | null;
+  selling_units: ProductExcelImportUnit[];
+  purchase_price: string | null;
+  supplier_purchase_price: string | null;
+  current_purchase_price: string | null;
+  purchase_price_changed: boolean | null;
+  opening_stock: string | null;
+  warnings: string[];
+};
+
+export type ProductExcelImportPreview = {
+  filename: string;
+  sheet_name: string;
+  product_count: number;
+  price_columns: string[];
+  has_purchase_price_column: boolean;
+  has_opening_stock_column: boolean;
+  products: ProductExcelImportProduct[];
+  warnings: string[];
+};
+
+
+export type ProductExcelImportDecision = {
+  serial_number: number;
+  action: "create" | "update" | "skip";
+  product_id?: string;
+  initialize_stock?: boolean;
+  stock_idempotency_key?: string;
+};
+
+export type ProductExcelImportResult = {
+  message: string;
+  created: number;
+  updated: number;
+  skipped: number;
+  stock_initialized: number;
+  total: number;
+};
+
+
+export type ProductMatchRequest = {
+  name: string;
+};
+
+export type ProductMatchCandidate = {
+  id: string;
+  name: string;
+  purchase_price: number | string | null;
+  default_unit_price: number | string;
+  base_unit: string;
+  selling_units: SellingUnit[];
+  is_stock_tracked: boolean;
+  stock_quantity: number | string | null;
+};
+
+export type ProductMatchResponse = {
+  status: "matched" | "ambiguous" | "not_found";
+  candidates: ProductMatchCandidate[];
 };
 
 export type CreateProductRequest = {
@@ -636,6 +823,158 @@ export async function getProducts(
 
     throw new Error(
       body?.detail || `Products request failed: ${response.status}`,
+    );
+  }
+
+  return response.json();
+}
+
+export async function previewProductPDFImport(
+  accessToken: string,
+  file: File,
+): Promise<ProductPDFImportPreview> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await fetch(
+    `${API_URL}/products/import/pdf/preview`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: formData,
+    },
+  );
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new Error(
+      body?.detail || `PDF preview failed: ${response.status}`,
+    );
+  }
+
+  return response.json();
+}
+
+export async function previewProductExcelImport(
+  accessToken: string,
+  file: File,
+): Promise<ProductExcelImportPreview> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await fetch(
+    `${API_URL}/products/import/excel/preview`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: formData,
+    },
+  );
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+
+    throw new Error(
+      body?.detail || `Excel preview failed: ${response.status}`,
+    );
+  }
+
+  return response.json();
+}
+
+
+export async function confirmProductExcelImport(
+  accessToken: string,
+  file: File,
+  decisions: ProductExcelImportDecision[],
+): Promise<ProductExcelImportResult> {
+  const formData = new FormData();
+
+  formData.append("file", file);
+  formData.append(
+    "decisions_json",
+    JSON.stringify(decisions),
+  );
+
+  const response = await fetch(
+    `${API_URL}/products/import/excel/confirm`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: formData,
+    },
+  );
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+
+    throw new Error(
+      body?.detail ||
+        `Excel import failed: ${response.status}`,
+    );
+  }
+
+  return response.json();
+}
+
+export async function confirmProductPDFImport(
+  accessToken: string,
+  file: File,
+  decisions: ProductPDFImportDecision[],
+): Promise<ProductPDFImportResult> {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("decisions_json", JSON.stringify(decisions));
+
+  const response = await fetch(
+    `${API_URL}/products/import/pdf/confirm`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: formData,
+    },
+  );
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new Error(
+      body?.detail || `PDF import failed: ${response.status}`,
+    );
+  }
+
+  return response.json();
+}
+
+export async function matchProduct(
+  accessToken: string,
+  payload: ProductMatchRequest,
+): Promise<ProductMatchResponse> {
+  const response = await fetch(
+    `${API_URL}/products/match`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    },
+  );
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+
+    throw new Error(
+      body?.detail ||
+        `Product matching failed: ${response.status}`,
     );
   }
 

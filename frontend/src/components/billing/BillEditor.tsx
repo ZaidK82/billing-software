@@ -11,6 +11,8 @@ import { getSession } from "../../lib/auth";
 import {
   DEFAULT_INVOICE_APPEARANCE,
   getProducts,
+  matchCustomer,
+  matchProduct,
   saveBill,
   updateBill,
 } from "../../lib/api";
@@ -18,8 +20,10 @@ import {
 import type {
   BusinessProfile,
   Customer,
+  CustomerMatchResponse,
   InvoiceColumn,
   Product,
+  ProductMatchResponse,
   SavedBill,
 } from "../../lib/api";
 
@@ -167,6 +171,12 @@ function BillEditor({
   const [customerAddress, setCustomerAddress] =
     useState(initialBill?.customer_address ?? "");
 
+  const [shippingCharge, setShippingCharge] = useState(
+    initialBill
+      ? Number(initialBill.shipping_charge ?? 0)
+      : 0,
+  );
+
   const [products, setProducts] = useState<Product[]>([]);
   const [isLoadingProducts, setIsLoadingProducts] = useState(true);
   const [productLoadError, setProductLoadError] = useState<string | null>(null);
@@ -210,6 +220,21 @@ function BillEditor({
 
   const [plainTextError, setPlainTextError] =
     useState<string | null>(null);
+
+  const [isMatchingParsedInvoice, setIsMatchingParsedInvoice] =
+    useState(false);
+
+  const [customerMatch, setCustomerMatch] =
+    useState<CustomerMatchResponse | null>(null);
+
+  const [productMatches, setProductMatches] =
+    useState<Record<number, ProductMatchResponse>>({});
+
+  const [selectedProductMatches, setSelectedProductMatches] =
+    useState<Record<number, string>>({});
+
+  const [selectedParsedCustomerId, setSelectedParsedCustomerId] =
+    useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -262,7 +287,7 @@ function BillEditor({
     );
   }, [items]);
 
-  const total = subtotal;
+  const total = subtotal + shippingCharge;
 
   function isDraftItemValid() {
     if (!draftItem.item_name.trim()) {
@@ -323,9 +348,13 @@ function BillEditor({
     !saving;
 
 
-  function handleParsePlainText() {
+  async function handleParsePlainText() {
     setPlainTextError(null);
     setParsedInvoice(null);
+    setCustomerMatch(null);
+    setProductMatches({});
+    setSelectedProductMatches({});
+    setSelectedParsedCustomerId("");
 
     if (!plainTextInput.trim()) {
       setPlainTextError("Paste invoice text first.");
@@ -340,6 +369,73 @@ function BillEditor({
       setPlainTextError(
         "No complete product rows were detected. Check the warnings below.",
       );
+      return;
+    }
+
+    setIsMatchingParsedInvoice(true);
+
+    try {
+      const session = await getSession();
+
+      if (!session?.access_token) {
+        throw new Error(
+          "Your session has expired. Please log in again.",
+        );
+      }
+
+      // Match customer using phone first, then exact normalized name
+      // on the backend.
+      if (result.customer_name || result.customer_phone) {
+        const customerResult = await matchCustomer(
+          session.access_token,
+          {
+            name: result.customer_name || null,
+            phone: result.customer_phone || null,
+          },
+        );
+
+        setCustomerMatch(customerResult);
+
+        if (
+          customerResult.status === "matched" &&
+          customerResult.candidates.length === 1
+        ) {
+          setSelectedParsedCustomerId(
+            customerResult.candidates[0].id,
+          );
+        }
+      }
+
+      // Match every parsed product independently.
+      const matches: Record<number, ProductMatchResponse> = {};
+      const selected: Record<number, string> = {};
+
+      for (const [index, item] of result.items.entries()) {
+        const productResult = await matchProduct(
+          session.access_token,
+          { name: item.item_name },
+        );
+
+        matches[index] = productResult;
+
+        if (
+          productResult.status === "matched" &&
+          productResult.candidates.length === 1
+        ) {
+          selected[index] = productResult.candidates[0].id;
+        }
+      }
+
+      setProductMatches(matches);
+      setSelectedProductMatches(selected);
+    } catch (err) {
+      setPlainTextError(
+        err instanceof Error
+          ? err.message
+          : "Unable to match customers and products.",
+      );
+    } finally {
+      setIsMatchingParsedInvoice(false);
     }
   }
 
@@ -348,16 +444,43 @@ function BillEditor({
       return;
     }
 
+    if (isMatchingParsedInvoice) {
+      return;
+    }
+
+    if (
+      customerMatch?.status === "ambiguous" &&
+      !selectedParsedCustomerId
+    ) {
+      setPlainTextError(
+        "Select the correct existing customer before importing.",
+      );
+      return;
+    }
+
+    for (const [index, result] of Object.entries(productMatches)) {
+      if (
+        result.status === "ambiguous" &&
+        !selectedProductMatches[Number(index)]
+      ) {
+        setPlainTextError(
+          `Select the correct catalogue product for "${parsedInvoice.items[Number(index)].item_name}".`,
+        );
+        return;
+      }
+    }
+
     const hasExistingData =
       customerName.trim().length > 0 ||
       customerPhone.trim().length > 0 ||
       customerAddress.trim().length > 0 ||
-      items.length > 0;
+      items.length > 0 ||
+      shippingCharge > 0;
 
     if (
       hasExistingData &&
       !window.confirm(
-        "Importing this text will replace the current item rows and update any customer fields detected in the text. Continue?",
+        "Importing this text will replace the current item rows, update detected customer fields, and replace the shipping fee. Continue?",
       )
     ) {
       return;
@@ -375,20 +498,44 @@ function BillEditor({
       setCustomerAddress(parsedInvoice.customer_address);
     }
 
-    setSelectedCustomerId("");
+    const matchedCustomerId =
+      selectedParsedCustomerId ||
+      (
+        customerMatch?.status === "matched"
+          ? customerMatch.candidates[0]?.id
+          : ""
+      );
+
+    setSelectedCustomerId(matchedCustomerId || "");
+    setShippingCharge(parsedInvoice.delivery_charge ?? 0);
 
     setItems(
-      parsedInvoice.items.map((item) => ({
-      id: crypto.randomUUID(),
-      product_id: null,
-      item_name: item.item_name,
-      quantity: item.quantity,
-      unit_price: item.unit_price,
-      line_total: null,
-      custom_values: {},
-      highlight_style: null,
-      unit_name: null,
-    })),
+      parsedInvoice.items.map((item, index) => {
+        const productId = selectedProductMatches[index] || null;
+
+        const matchedProduct = productId
+          ? products.find((product) => product.id === productId)
+          : null;
+
+        const unitName =
+          item.unit_name ||
+          matchedProduct?.base_unit ||
+          null;
+
+        return {
+          id: crypto.randomUUID(),
+          product_id: productId,
+          item_name: matchedProduct?.name || item.item_name,
+          quantity: item.quantity,
+          unit_price: item.unit_price,
+          line_total: null,
+          custom_values: unitName
+            ? syncInvoiceUnit({}, unitName)
+            : {},
+          highlight_style: null,
+          unit_name: unitName,
+        };
+      }),
     );
 
     resetDraftItem();
@@ -396,8 +543,11 @@ function BillEditor({
     setPlainTextError(null);
     setParsedInvoice(null);
     setPlainTextInput("");
+    setCustomerMatch(null);
+    setProductMatches({});
+    setSelectedProductMatches({});
+    setSelectedParsedCustomerId("");
   }
-
 
 
   function handleCustomerChange(
@@ -491,7 +641,10 @@ function handleSellingUnitChange(unitName: string) {
     : 1;
 
   const suggestedPrice =
-    Number(product.default_unit_price) * factor;
+    selectedUnit?.price !== undefined &&
+    selectedUnit.price !== null
+      ? Number(selectedUnit.price)
+      : Number(product.default_unit_price) * factor;
 
   setDraftItem((currentItem) => {
     const nextLineTotal =
@@ -760,6 +913,14 @@ function removeItem(itemId: string) {
     return;
     }
 
+    if (
+      !Number.isFinite(shippingCharge) ||
+      shippingCharge < 0
+    ) {
+      setError("Shipping fee must be a valid non-negative amount.");
+      return;
+    }
+
     for (const item of items) {
       if (!item.item_name.trim()) {
         setError(
@@ -834,6 +995,7 @@ function removeItem(itemId: string) {
         customer_name: trimmedCustomerName,
         customer_phone: customerPhone.trim() || null,
         customer_address: customerAddress.trim() || null,
+        shipping_charge: shippingCharge,
         invoice_columns: invoiceColumns,
         appearance_settings: DEFAULT_INVOICE_APPEARANCE,
         items: items.map((item, index) => ({
@@ -947,7 +1109,11 @@ function removeItem(itemId: string) {
             <button
               type="button"
               onClick={handleParsePlainText}
-              disabled={saving || !plainTextInput.trim()}
+              disabled={
+                saving ||
+                isMatchingParsedInvoice ||
+                !plainTextInput.trim()
+              }
               className="mt-3 min-h-11 w-full rounded-xl border border-blue-600 px-4 py-3 text-sm font-semibold text-blue-700 transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Parse Text
@@ -971,6 +1137,54 @@ function removeItem(itemId: string) {
                   </p>
                 </div>
 
+                {customerMatch && (
+                <div className="rounded-lg border border-slate-200 p-3">
+                  <h3 className="font-semibold text-slate-900">
+                    Customer Matching
+                  </h3>
+
+                  {customerMatch.status === "matched" && (
+                    <p className="mt-2 text-sm text-green-700">
+                      Matched by {customerMatch.match_type}:{" "}
+                      {customerMatch.candidates[0]?.name}
+                    </p>
+                  )}
+
+                  {customerMatch.status === "not_found" && (
+                    <p className="mt-2 text-sm text-amber-700">
+                      No existing customer matched. You can continue with the
+                      entered customer details and select or create a customer
+                      through the normal billing workflow.
+                    </p>
+                  )}
+
+                  {customerMatch.status === "ambiguous" && (
+                    <div className="mt-2">
+                      <label className="mb-1 block text-sm font-medium text-slate-700">
+                        Multiple customers matched. Select the correct customer.
+                      </label>
+
+                      <select
+                        value={selectedParsedCustomerId}
+                        onChange={(event) =>
+                          setSelectedParsedCustomerId(event.target.value)
+                        }
+                        className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                      >
+                        <option value="">Select customer</option>
+
+                        {customerMatch.candidates.map((candidate) => (
+                          <option key={candidate.id} value={candidate.id}>
+                            {candidate.name}
+                            {candidate.phone ? ` — ${candidate.phone}` : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              )}
+
                 <div>
                   <h3 className="font-semibold text-slate-900">
                     Detected Items ({parsedInvoice.items.length})
@@ -983,9 +1197,11 @@ function removeItem(itemId: string) {
                           <tr>
                             <th className="p-3">Item</th>
                             <th className="p-3">Qty</th>
+                            <th className="p-3">Unit</th>
                             <th className="p-3">Rate</th>
                             <th className="p-3">Calculated Total</th>
                             <th className="p-3">Stated Total</th>
+                            <th className="p-3">Catalogue Match</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -994,11 +1210,14 @@ function removeItem(itemId: string) {
                               key={`${item.item_name}-${index}`}
                               className="border-t border-slate-200"
                             >
-                              <td className="p-3">{item.item_name}</td>
-                              <td className="p-3">{item.quantity}</td>
-                              <td className="p-3">
-                                ₹{item.unit_price.toFixed(2)}
-                              </td>
+                            <td className="p-3">{item.item_name}</td>
+                            <td className="p-3">{item.quantity}</td>
+                            <td className="p-3">
+                              {item.unit_name || "Not specified"}
+                            </td>
+                            <td className="p-3">
+                              ₹{item.unit_price.toFixed(2)}
+                            </td>
                               <td className="p-3">
                                 ₹{(item.quantity * item.unit_price).toFixed(2)}
                               </td>
@@ -1006,6 +1225,46 @@ function removeItem(itemId: string) {
                                 {item.stated_total === null
                                   ? "Not stated"
                                   : `₹${item.stated_total.toFixed(2)}`}
+                              </td>
+                              <td className="p-3">
+                                {productMatches[index]?.status === "matched" && (
+                                  <span className="text-sm text-green-700">
+                                    {productMatches[index].candidates[0]?.name}
+                                  </span>
+                                )}
+
+                                {productMatches[index]?.status === "not_found" && (
+                                  <span className="text-sm text-amber-700">
+                                    No match
+                                  </span>
+                                )}
+
+                                {productMatches[index]?.status === "ambiguous" && (
+                                  <select
+                                    value={selectedProductMatches[index] || ""}
+                                    onChange={(event) =>
+                                      setSelectedProductMatches((current) => ({
+                                        ...current,
+                                        [index]: event.target.value,
+                                      }))
+                                    }
+                                    className="min-h-9 w-full rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs"
+                                  >
+                                    <option value="">Select product</option>
+
+                                    {productMatches[index].candidates.map((candidate) => (
+                                      <option key={candidate.id} value={candidate.id}>
+                                        {candidate.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                )}
+
+                                {!productMatches[index] && (
+                                  <span className="text-xs text-slate-500">
+                                    Matching...
+                                  </span>
+                                )}
                               </td>
                             </tr>
                           ))}
@@ -1045,10 +1304,16 @@ function removeItem(itemId: string) {
                 <button
                   type="button"
                   onClick={applyParsedInvoice}
-                  disabled={saving || parsedInvoice.items.length === 0}
+                  disabled={
+                  saving ||
+                  isMatchingParsedInvoice ||
+                  parsedInvoice.items.length === 0
+                  }
                   className="min-h-11 w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  Import into Invoice
+                  {isMatchingParsedInvoice
+                    ? "Matching customers and products..."
+                    : "Import into Invoice"}
                 </button>
               </div>
             )}
@@ -1776,21 +2041,46 @@ function removeItem(itemId: string) {
             </section>
 
             <section className="rounded-xl bg-slate-50 p-4 sm:p-5">
-              <div className="space-y-2">
+              <div className="space-y-4">
                 <div className="flex justify-between gap-4 text-sm text-slate-600">
                   <span>Subtotal</span>
-
                   <span className="font-medium">
                     ₹{subtotal.toFixed(2)}
                   </span>
                 </div>
 
-                <div className="flex justify-between gap-4 border-t border-slate-200 pt-3 text-base font-bold text-slate-900 sm:text-lg">
-                  <span>Total</span>
+                <div>
+                  <label
+                    htmlFor="shipping-charge"
+                    className="mb-1 block text-sm font-medium text-slate-700"
+                  >
+                    Shipping Fee
+                  </label>
 
-                  <span>
-                    ₹{total.toFixed(2)}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-slate-600">₹</span>
+                    <input
+                      id="shipping-charge"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={shippingCharge}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setShippingCharge(
+                          value === "" ? 0 : Number(value),
+                        );
+                      }}
+                      disabled={saving}
+                      className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+                      placeholder="0.00"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-between gap-4 border-t border-slate-200 pt-3 text-base font-bold text-slate-900 sm:text-lg">
+                  <span>Grand Total</span>
+                  <span>₹{total.toFixed(2)}</span>
                 </div>
               </div>
             </section>
