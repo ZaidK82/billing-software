@@ -1,4 +1,6 @@
 import {
+  lazy,
+  Suspense,
   useEffect,
   useRef,
   useState,
@@ -15,19 +17,55 @@ import {
 } from "react-router-dom";
 
 import Dashboard from "./components/dashboard/Dashboard";
-import BillEditor from "./components/billing/BillEditor";
-import BillPreview from "./components/billing/BillPreview";
-import BillHistory from "./components/billing/BillHistory";
-import CustomerList from "./components/customers/CustomerList";
-import CustomerForm from "./components/customers/CustomerForm";
 import AppNavbar from "./components/navigation/AppNavbar";
-import BusinessProfilePage from "./components/business/BusinessProfile";
-import ProductList from "./components/products/ProductList";
-import ProductForm from "./components/products/ProductForm";
-import SalesReport from "./components/reports/SalesReport";
-import InventoryReport from "./components/reports/InventoryReport";
-import CustomerReport from "./components/reports/CustomerReport";
-import ProfitabilityReport from "./components/reports/ProfitabilityReport";
+
+const BillEditor = lazy(
+  () => import("./components/billing/BillEditor"),
+);
+
+const BillPreview = lazy(
+  () => import("./components/billing/BillPreview"),
+);
+
+const BillHistory = lazy(
+  () => import("./components/billing/BillHistory"),
+);
+
+const CustomerList = lazy(
+  () => import("./components/customers/CustomerList"),
+);
+
+const CustomerForm = lazy(
+  () => import("./components/customers/CustomerForm"),
+);
+
+const BusinessProfilePage = lazy(
+  () => import("./components/business/BusinessProfile"),
+);
+
+const ProductList = lazy(
+  () => import("./components/products/ProductList"),
+);
+
+const ProductForm = lazy(
+  () => import("./components/products/ProductForm"),
+);
+
+const SalesReport = lazy(
+  () => import("./components/reports/SalesReport"),
+);
+
+const InventoryReport = lazy(
+  () => import("./components/reports/InventoryReport"),
+);
+
+const CustomerReport = lazy(
+  () => import("./components/reports/CustomerReport"),
+);
+
+const ProfitabilityReport = lazy(
+  () => import("./components/reports/ProfitabilityReport"),
+);
 
 import {
   createBusiness,
@@ -1309,8 +1347,19 @@ async function handleAssetLoadError() {
 
     return (
       <>
-        {navigation}
+      {navigation}
 
+      <Suspense
+        fallback={
+          <main className="min-h-screen bg-slate-100 px-4 py-6">
+            <div className="mx-auto flex min-h-[60vh] max-w-4xl items-center justify-center">
+              <p className="text-sm font-medium text-slate-600">
+                Loading page...
+              </p>
+            </div>
+          </main>
+        }
+      >
         <Routes>
           <Route
             path="/"
@@ -1850,6 +1899,7 @@ async function handleAssetLoadError() {
             }
           />
         </Routes>
+        </Suspense>
       </>
     );
   }

@@ -1,3 +1,4 @@
+from functools import lru_cache
 from uuid import UUID
 
 import jwt
@@ -11,6 +12,7 @@ from app.core.config import settings
 security = HTTPBearer()
 
 
+@lru_cache(maxsize=1)
 def get_jwks_client() -> PyJWKClient:
     if not settings.supabase_url:
         raise HTTPException(
