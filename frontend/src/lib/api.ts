@@ -1454,7 +1454,12 @@ export async function getProfitabilityReport(
   );
 
   if (!response.ok) {
-    throw new Error("Failed to fetch profitability report");
+    const body = await response.json().catch(() => null);
+
+    throw new Error(
+      body?.detail ||
+        `Profitability report request failed: ${response.status}`,
+    );
   }
 
   return response.json();
