@@ -3049,6 +3049,21 @@ async def confirm_product_excel_import(
     processed_product_ids = set()
 
     try:
+        existing_product_names = set()
+
+        if any(
+            decision["action"] == "create"
+            for decision in decisions_by_serial.values()
+        ):
+            existing_product_names = {
+                normalize_match_text(name)
+                for name in db.scalars(
+                    select(Product.name).where(
+                        Product.business_id == business.id
+                    )
+                ).all()
+            }
+
         for serial, extracted in extracted_by_serial.items():
             decision = decisions_by_serial[serial]
             action = decision["action"]
@@ -3197,17 +3212,14 @@ async def confirm_product_excel_import(
             product = None
 
             if action == "create":
-                # Recheck for duplicates at confirmation time.
-                existing_products = db.scalars(
-                    select(Product).where(
-                        Product.business_id == business.id
-                    )
-                ).all()
+                # Recheck for duplicates using the confirmation-time
+                # catalogue snapshot and names created in this import.
+                normalized_product_name = normalize_match_text(
+                    extracted["name"]
+                )
 
-                duplicate = any(
-                    normalize_match_text(existing.name)
-                    == normalize_match_text(extracted["name"])
-                    for existing in existing_products
+                duplicate = (
+                    normalized_product_name in existing_product_names
                 )
 
                 if duplicate:
@@ -3233,6 +3245,10 @@ async def confirm_product_excel_import(
 
                 db.add(product)
                 db.flush()
+
+                existing_product_names.add(
+                    normalize_match_text(product.name)
+                )
 
                 created_count += 1
 
@@ -3600,6 +3616,21 @@ async def confirm_product_pdf_import(
     skipped_count = 0
 
     try:
+        existing_product_names = set()
+
+        if any(
+            decision["action"] == "create"
+            for decision in decisions_by_serial.values()
+        ):
+            existing_product_names = {
+                normalize_match_text(name)
+                for name in db.scalars(
+                    select(Product.name).where(
+                        Product.business_id == business.id
+                    )
+                ).all()
+            }
+
         for serial, extracted in extracted_by_serial.items():
             decision = decisions_by_serial[serial]
             action = decision["action"]
@@ -3703,17 +3734,14 @@ async def confirm_product_pdf_import(
                 supplier_units.append(selling_unit)
 
             if action == "create":
-                # Recheck duplicates at confirmation time.
-                same_name_products = db.scalars(
-                    select(Product).where(
-                        Product.business_id == business.id
-                    )
-                ).all()
+                # Recheck for duplicates using the confirmation-time
+                # catalogue snapshot and names created in this import.
+                normalized_product_name = normalize_match_text(
+                    extracted["name"]
+                )
 
-                duplicate = any(
-                    normalize_match_text(product.name)
-                    == normalize_match_text(extracted["name"])
-                    for product in same_name_products
+                duplicate = (
+                    normalized_product_name in existing_product_names
                 )
 
                 if duplicate:
@@ -3748,6 +3776,10 @@ async def confirm_product_pdf_import(
 
                 db.add(product)
                 db.flush()
+
+                existing_product_names.add(
+                    normalize_match_text(product.name)
+                )
 
                 created_count += 1
                 continue

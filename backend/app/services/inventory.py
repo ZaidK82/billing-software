@@ -28,25 +28,12 @@ def get_inventory_quantity(item: dict) -> Decimal:
     return quantity
 
 def validate_inventory_ledger_balance(
-    db: Session,
-    business_id: UUID,
     product: Product,
+    latest_stock_after: Decimal | None,
 ) -> None:
     """Reject reconciliation when the stored balance disagrees with the ledger."""
-    latest_movement = db.scalar(
-        select(InventoryMovement)
-        .where(
-            InventoryMovement.business_id == business_id,
-            InventoryMovement.product_id == product.id,
-        )
-        .order_by(
-            InventoryMovement.created_at.desc(),
-            InventoryMovement.id.desc(),
-        )
-        .limit(1)
-    )
 
-    if latest_movement is None:
+    if latest_stock_after is None:
         # A product without movements is valid only if it has no
         # initialized balance.
         if product.stock_quantity is not None:
@@ -59,7 +46,7 @@ def validate_inventory_ledger_balance(
             )
         return
 
-    if product.stock_quantity != latest_movement.stock_after:
+    if product.stock_quantity != latest_stock_after:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
@@ -148,11 +135,45 @@ def reconcile_bill_inventory(
             ),
         )
 
+    # Fetch the latest inventory movement for all relevant products
+    # in one query instead of issuing one query per product.
+    latest_movements = (
+        select(
+            InventoryMovement.product_id.label("product_id"),
+            InventoryMovement.stock_after.label("stock_after"),
+            func.row_number()
+            .over(
+                partition_by=InventoryMovement.product_id,
+                order_by=(
+                    InventoryMovement.created_at.desc(),
+                    InventoryMovement.id.desc(),
+                ),
+            )
+            .label("row_number"),
+        )
+        .where(
+            InventoryMovement.business_id == business_id,
+            InventoryMovement.product_id.in_(product_ids),
+        )
+        .subquery()
+    )
+
+    latest_stock_rows = db.execute(
+        select(
+            latest_movements.c.product_id,
+            latest_movements.c.stock_after,
+        ).where(latest_movements.c.row_number == 1)
+    ).all()
+
+    latest_stock_by_product_id = {
+        product_id: stock_after
+        for product_id, stock_after in latest_stock_rows
+    }
+
     for product_id in sorted(product_ids, key=str):
         validate_inventory_ledger_balance(
-            db=db,
-            business_id=business_id,
             product=products_by_id[product_id],
+            latest_stock_after=latest_stock_by_product_id.get(product_id),
         )
 
     existing_rows = db.execute(
