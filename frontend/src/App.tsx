@@ -1086,6 +1086,7 @@ async function handleAssetLoadError() {
     const match = location.pathname.match(
       /^\/bills\/([^/]+)(?:\/edit)?$/,
     );
+
     if (!match) {
       return;
     }
@@ -1096,45 +1097,60 @@ async function handleAssetLoadError() {
       return;
     }
 
-    setIsBillLoading(true);
+    let cancelled = false;
 
-  async function loadBill() {
-    setIsBillLoading(true);
-    setBillsError(null);
+    async function loadBill() {
+      setIsBillLoading(true);
+      setBillsError(null);
 
-    try {
-      const session = await getSession();
+      try {
+        const session = await getSession();
 
-      if (!session?.access_token) {
-        throw new Error(
-          "Your session has expired. Please log in again.",
-        );
+        if (cancelled) {
+          return;
+        }
+
+        if (!session?.access_token) {
+          throw new Error(
+            "Your session has expired. Please log in again.",
+          );
+        }
+
+        const [bill, assets] = await Promise.all([
+          getBill(
+            session.access_token,
+            billId,
+          ),
+          loadBusinessAssets(),
+        ]);
+
+        if (cancelled) {
+          return;
+        }
+
+        setSavedBill(bill);
+        setLogoUrl(assets.logoUrl);
+        setSignatureUrl(assets.signatureUrl);
+      } catch (error) {
+        if (!cancelled) {
+          setBillsError(
+            error instanceof Error
+              ? error.message
+              : "Unable to load the bill.",
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setIsBillLoading(false);
+        }
       }
-
-      const [bill, assets] = await Promise.all([
-        getBill(
-          session.access_token,
-          billId,
-        ),
-        loadBusinessAssets(),
-      ]);
-
-      setSavedBill(bill);
-
-      setLogoUrl(assets.logoUrl);
-      setSignatureUrl(assets.signatureUrl);
-    } catch (error) {
-      setBillsError(
-        error instanceof Error
-          ? error.message
-          : "Unable to load the bill.",
-      );
-    } finally {
-      setIsBillLoading(false);
     }
-  }
 
-    loadBill();
+    void loadBill();
+
+    return () => {
+      cancelled = true;
+    };
   }, [
     currentUser,
     business,
@@ -1142,7 +1158,7 @@ async function handleAssetLoadError() {
     savedBill?.id,
   ]);
 
-
+  // Load product when directly navigating to product edit.
   useEffect(() => {
     if (!currentUser || !business) {
       return;
@@ -1179,8 +1195,7 @@ async function handleAssetLoadError() {
             return;
           }
 
-          // Read the refreshed catalogue through the API so
-          // direct navigation does not depend on stale state.
+          // Read the refreshed catalogue through the API.
           const session = await getSession();
 
           if (!session?.access_token) {
@@ -1237,6 +1252,7 @@ async function handleAssetLoadError() {
     editingProduct?.id,
   ]);
 
+  // Load customer when directly navigating to customer edit.
   useEffect(() => {
     if (!currentUser || !business) {
       return;
@@ -1256,6 +1272,8 @@ async function handleAssetLoadError() {
       return;
     }
 
+    let cancelled = false;
+
     async function loadEditingCustomer() {
       setIsEditingCustomerLoading(true);
       setCustomerSaveError(null);
@@ -1270,6 +1288,10 @@ async function handleAssetLoadError() {
           const loadedCustomers =
             await loadCustomers();
 
+          if (cancelled) {
+            return;
+          }
+
           customer =
             loadedCustomers?.find(
               (item) => item.id === customerId,
@@ -1282,19 +1304,29 @@ async function handleAssetLoadError() {
           );
         }
 
-        setEditingCustomer(customer);
+        if (!cancelled) {
+          setEditingCustomer(customer);
+        }
       } catch (error) {
-        setCustomerSaveError(
-          error instanceof Error
-            ? error.message
-            : "Unable to load customer.",
-        );
+        if (!cancelled) {
+          setCustomerSaveError(
+            error instanceof Error
+              ? error.message
+              : "Unable to load customer.",
+          );
+        }
       } finally {
-        setIsEditingCustomerLoading(false);
+        if (!cancelled) {
+          setIsEditingCustomerLoading(false);
+        }
       }
     }
 
-    loadEditingCustomer();
+    void loadEditingCustomer();
+
+    return () => {
+      cancelled = true;
+    };
   }, [
     currentUser,
     business,
