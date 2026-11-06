@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   getSalesReport,
@@ -69,10 +69,15 @@ function SalesReport() {
 
   const [error, setError] = useState<string | null>(null);
 
+  const requestIdRef = useRef(0);
+
   const loadReport = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
+
     if (endDate < startDate) {
       setError("End date cannot be earlier than start date.");
       setReport(null);
+      setLoading(false);
       return;
     }
 
@@ -81,6 +86,10 @@ function SalesReport() {
 
     try {
       const session = await getSession();
+
+      if (requestId !== requestIdRef.current) {
+        return;
+      }
 
       if (!session?.access_token) {
         throw new Error(
@@ -94,22 +103,32 @@ function SalesReport() {
         endDate,
       );
 
-      setReport(data);
+      if (requestId === requestIdRef.current) {
+        setReport(data);
+      }
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to load sales report.",
-      );
+      if (requestId === requestIdRef.current) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Unable to load sales report.",
+        );
 
-      setReport(null);
+        setReport(null);
+      }
     } finally {
-      setLoading(false);
+      if (requestId === requestIdRef.current) {
+        setLoading(false);
+      }
     }
   }, [startDate, endDate]);
 
   useEffect(() => {
     void loadReport();
+
+    return () => {
+      requestIdRef.current += 1;
+    };
   }, [loadReport]);
 
   const summaryCards = [

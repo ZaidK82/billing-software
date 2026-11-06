@@ -1,5 +1,5 @@
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
 import {
@@ -84,12 +84,16 @@ function ProfitabilityReport() {
 
   const [error, setError] = useState<string | null>(null);
 
+  const requestIdRef = useRef(0);
   const [statusFilter, setStatusFilter] = useState("all");
 
   const loadReport = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
+
     if (endDate < startDate) {
       setError("End date cannot be earlier than start date.");
       setReport(null);
+      setLoading(false);
       return;
     }
 
@@ -98,6 +102,10 @@ function ProfitabilityReport() {
 
     try {
       const session = await getSession();
+
+      if (requestId !== requestIdRef.current) {
+        return;
+      }
 
       if (!session?.access_token) {
         throw new Error(
@@ -111,22 +119,32 @@ function ProfitabilityReport() {
         endDate,
       );
 
-      setReport(data);
+      if (requestId === requestIdRef.current) {
+        setReport(data);
+      }
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to load profitability report.",
-      );
+      if (requestId === requestIdRef.current) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Unable to load profitability report.",
+        );
 
-      setReport(null);
+        setReport(null);
+      }
     } finally {
-      setLoading(false);
+      if (requestId === requestIdRef.current) {
+        setLoading(false);
+      }
     }
   }, [startDate, endDate]);
 
   useEffect(() => {
     void loadReport();
+
+    return () => {
+      requestIdRef.current += 1;
+    };
   }, [loadReport]);
 
   const filteredProducts = (report?.products ?? []).filter(
