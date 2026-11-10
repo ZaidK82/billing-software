@@ -1037,13 +1037,13 @@ function removeItem(itemId: string) {
 
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mx-auto w-full max-w-4xl">
-        <section className="rounded-2xl bg-white p-5 shadow-sm sm:p-6 lg:p-8">
+      <div className="mx-auto w-full max-w-5xl">
+        <div>
           <div className="mb-6 sm:mb-8">
             <button
               type="button"
               onClick={onCancel}
-              className="mb-4 rounded-lg px-2 py-2 text-sm font-medium text-blue-600 transition hover:bg-blue-50 active:bg-blue-100"
+              className="btn btn-ghost btn-sm mb-4"
             >
               ← Dashboard
             </button>
@@ -1069,7 +1069,7 @@ function removeItem(itemId: string) {
           >
 
 
-          <section className="rounded-xl border border-slate-200 p-4 sm:p-5">
+          <section className="ui-card p-4 shadow-sm sm:p-6">
             <h2 className="text-base font-semibold text-slate-900">
               Fill Invoice from Text
             </h2>
@@ -1079,7 +1079,15 @@ function removeItem(itemId: string) {
               supported plain-text formats. Review the results before importing.
             </p>
 
+            <label
+              htmlFor="plain-text-invoice"
+              className="form-label mt-4"
+            >
+              Invoice text
+            </label>
+
             <textarea
+              id="plain-text-invoice"
               value={plainTextInput}
               onChange={(event) => {
                 setPlainTextInput(event.target.value);
@@ -1097,7 +1105,7 @@ function removeItem(itemId: string) {
 
           Product B 15pcs
           20/- x 15 = 300/-`}
-              className="mt-4 w-full rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500"
+              className="form-control mt-4 min-h-40 resize-y"
             />
 
             {plainTextError && (
@@ -1114,14 +1122,14 @@ function removeItem(itemId: string) {
                 isMatchingParsedInvoice ||
                 !plainTextInput.trim()
               }
-              className="mt-3 min-h-11 w-full rounded-xl border border-blue-600 px-4 py-3 text-sm font-semibold text-blue-700 transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+              className="btn btn-secondary btn-block mt-3"
             >
               Parse Text
             </button>
 
             {parsedInvoice && (
               <div className="mt-5 space-y-4">
-                <div className="rounded-lg bg-slate-50 p-3">
+                <div className="ui-panel p-3">
                   <h3 className="font-semibold text-slate-900">
                     Detected Customer Details
                   </h3>
@@ -1138,7 +1146,7 @@ function removeItem(itemId: string) {
                 </div>
 
                 {customerMatch && (
-                <div className="rounded-lg border border-slate-200 p-3">
+                <div className="ui-card p-3">
                   <h3 className="font-semibold text-slate-900">
                     Customer Matching
                   </h3>
@@ -1160,16 +1168,20 @@ function removeItem(itemId: string) {
 
                   {customerMatch.status === "ambiguous" && (
                     <div className="mt-2">
-                      <label className="mb-1 block text-sm font-medium text-slate-700">
+                      <label
+                        htmlFor="parsed-customer-match"
+                        className="form-label"
+                      >
                         Multiple customers matched. Select the correct customer.
                       </label>
 
                       <select
+                        id="parsed-customer-match"
                         value={selectedParsedCustomerId}
                         onChange={(event) =>
                           setSelectedParsedCustomerId(event.target.value)
                         }
-                        className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                        className="form-control"
                       >
                         <option value="">Select customer</option>
 
@@ -1248,7 +1260,7 @@ function removeItem(itemId: string) {
                                         [index]: event.target.value,
                                       }))
                                     }
-                                    className="min-h-9 w-full rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs"
+                                    className="form-control min-h-9 px-2 py-1 text-xs"
                                   >
                                     <option value="">Select product</option>
 
@@ -1281,13 +1293,13 @@ function removeItem(itemId: string) {
                 {parsedInvoice.warnings.length > 0 && (
                   <div
                     role="status"
-                    className="rounded-lg border border-amber-300 bg-amber-50 p-3"
+                    className="rounded-lg border border-[var(--warning-border)] bg-[var(--warning-subtle)] p-3"
                   >
-                    <h3 className="font-semibold text-amber-900">
+                    <h3 className="font-semibold text-[var(--warning)]">
                       Please Review
                     </h3>
 
-                    <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-amber-900">
+                    <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-[var(--warning)]">
                       {parsedInvoice.warnings.map((warning, index) => (
                         <li key={`${warning}-${index}`}>{warning}</li>
                       ))}
@@ -1309,7 +1321,7 @@ function removeItem(itemId: string) {
                   isMatchingParsedInvoice ||
                   parsedInvoice.items.length === 0
                   }
-                  className="min-h-11 w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="btn btn-primary btn-block"
                 >
                   {isMatchingParsedInvoice
                     ? "Matching customers and products..."
@@ -1319,7 +1331,7 @@ function removeItem(itemId: string) {
             )}
           </section>
 
-            <section>
+            <section className="ui-card p-4 sm:p-6">
               <h2 className="mb-4 text-base font-semibold text-slate-900">
                 Customer Details
               </h2>
@@ -1328,7 +1340,7 @@ function removeItem(itemId: string) {
                 <div>
                   <label
                     htmlFor="saved-customer"
-                    className="mb-1 block text-sm font-medium text-slate-700"
+                    className="form-label"
                   >
                     Saved Customer
                   </label>
@@ -1345,7 +1357,7 @@ function removeItem(itemId: string) {
                       isLoadingCustomers ||
                       saving
                     }
-                    className="min-h-11 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500 disabled:cursor-not-allowed disabled:bg-slate-50"
+                    className="form-control"
                   >
                     <option value="">
                       {isLoadingCustomers
@@ -1362,7 +1374,7 @@ function removeItem(itemId: string) {
                       >
                         {customer.name}
                         {customer.phone
-                          ? ` â€” ${customer.phone}`
+                          ? ` — ${customer.phone}`
                           : ""}
                       </option>
                     ))}
@@ -1390,7 +1402,7 @@ function removeItem(itemId: string) {
                   <div>
                     <label
                       htmlFor="customer-name"
-                      className="mb-1 block text-sm font-medium text-slate-700"
+                      className="form-label"
                     >
                       Customer Name *
                     </label>
@@ -1406,7 +1418,7 @@ function removeItem(itemId: string) {
                         );
                         setSelectedCustomerId("");
                       }}
-                      className="min-h-11 w-full rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500"
+                      className="form-control"
                       placeholder="Customer name"
                     />
                   </div>
@@ -1414,7 +1426,7 @@ function removeItem(itemId: string) {
                   <div>
                     <label
                       htmlFor="customer-phone"
-                      className="mb-1 block text-sm font-medium text-slate-700"
+                      className="form-label"
                     >
                       Phone
                     </label>
@@ -1429,7 +1441,7 @@ function removeItem(itemId: string) {
                         );
                         setSelectedCustomerId("");
                       }}
-                      className="min-h-11 w-full rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500"
+                      className="form-control"
                       placeholder="9876543210"
                     />
                   </div>
@@ -1438,7 +1450,7 @@ function removeItem(itemId: string) {
                 <div>
                   <label
                     htmlFor="customer-address"
-                    className="mb-1 block text-sm font-medium text-slate-700"
+                    className="form-label"
                   >
                     Address
                   </label>
@@ -1453,14 +1465,14 @@ function removeItem(itemId: string) {
                       );
                       setSelectedCustomerId("");
                     }}
-                    className="w-full resize-none rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500"
+                    className="form-control resize-none"
                     placeholder="Customer address"
                   />
                 </div>
               </div>
             </section>
 
-            <section>
+            <section className="ui-card p-4 sm:p-6">
             <div className="mb-4">
                 <h2 className="text-base font-semibold text-slate-900">
                 Items
@@ -1473,7 +1485,7 @@ function removeItem(itemId: string) {
             </div>
 
             {/* Fixed item entry block */}
-            <div className="rounded-xl border-2 border-blue-100 bg-blue-50/40 p-4 sm:p-5">
+            <div className="ui-panel p-4 sm:p-5">
                 <div className="mb-4 flex items-center justify-between gap-3">
                 <div>
                     <p className="text-sm font-semibold text-slate-900">
@@ -1493,28 +1505,28 @@ function removeItem(itemId: string) {
                     <button
                     type="button"
                     onClick={resetDraftItem}
-                    className="rounded-lg px-2 py-2 text-xs font-medium text-slate-600 transition hover:bg-white active:bg-slate-100"
+                    className="btn btn-ghost btn-sm"
                     >
                     Cancel Edit
                     </button>
                 )}
                 </div>
 
-                <div className="space-y-4">
-                  <div>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="min-w-0 sm:col-span-2">
                     <p className="mb-2 text-xs font-medium text-slate-600">
                       Price entry mode
                     </p>
 
-                    <div className="grid grid-cols-2 gap-2 rounded-lg bg-slate-100 p-1">
+                    <div className="grid grid-cols-2 gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-1">
                       <button
                         type="button"
                         onClick={() => changePriceEntryMode("rate")}
                         aria-pressed={priceEntryMode === "rate"}
-                        className={`min-h-10 rounded-md px-3 py-2 text-sm font-semibold ${
+                        className={`btn btn-sm ${
                           priceEntryMode === "rate"
-                            ? "bg-white text-blue-700 shadow-sm"
-                            : "text-slate-600 hover:bg-white/60"
+                            ? "btn-primary"
+                            : "btn-secondary"
                         }`}
                       >
                         By rate
@@ -1524,10 +1536,10 @@ function removeItem(itemId: string) {
                         type="button"
                         onClick={() => changePriceEntryMode("total")}
                         aria-pressed={priceEntryMode === "total"}
-                        className={`min-h-10 rounded-md px-3 py-2 text-sm font-semibold ${
+                        className={`btn btn-sm ${
                           priceEntryMode === "total"
-                            ? "bg-white text-blue-700 shadow-sm"
-                            : "text-slate-600 hover:bg-white/60"
+                            ? "btn-primary"
+                            : "btn-secondary"
                         }`}
                       >
                         By total
@@ -1541,10 +1553,10 @@ function removeItem(itemId: string) {
                     </p>
                   </div>
 
-                  <div className="mb-4">
+                  <div className="min-w-0 sm:col-span-2">
                     <label
                       htmlFor="draft-product-selection"
-                      className="mb-1 block text-xs font-medium text-slate-600"
+                      className="form-label text-xs"
                     >
                       Select from product catalogue (optional)
                     </label>
@@ -1556,7 +1568,7 @@ function removeItem(itemId: string) {
                         handleProductSelection(event.target.value)
                       }
                       disabled={saving || isLoadingProducts}
-                      className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500 disabled:cursor-not-allowed disabled:bg-slate-50"
+                      className="form-control"
                     >
                       <option value="">
                         {isLoadingProducts
@@ -1610,10 +1622,10 @@ function removeItem(itemId: string) {
                       ];
 
                       return (
-                        <div>
+                        <div className="min-w-0 sm:col-span-2">
                           <label
                             htmlFor="draft-selling-unit"
-                            className="mb-1 block text-xs font-medium text-slate-600"
+                            className="form-label text-xs"
                           >
                             Selling Unit
                           </label>
@@ -1625,7 +1637,7 @@ function removeItem(itemId: string) {
                               handleSellingUnitChange(event.target.value)
                             }
                             disabled={saving}
-                            className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500 disabled:cursor-not-allowed disabled:bg-slate-50"
+                            className="form-control"
                           >
                             {sellingUnits.map((unit) => (
                               <option key={unit.name} value={unit.name}>
@@ -1651,10 +1663,17 @@ function removeItem(itemId: string) {
                     })()}
 
                   {invoiceColumns.map((column) => (
-                    <div key={column.key}>
+                    <div
+                      key={column.key}
+                      className={
+                        column.key === "item_name"
+                          ? "min-w-0 sm:col-span-2"
+                          : "min-w-0"
+                      }
+                    >
                     <label
                         htmlFor={`draft-item-${column.key}`}
-                        className="mb-1 block text-xs font-medium text-slate-600"
+                        className="form-label text-xs"
                     >
                         {column.label}
                         {column.required ? " *" : ""}
@@ -1672,7 +1691,7 @@ function removeItem(itemId: string) {
                                 event.target.value,
                             )
                             }
-                            className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+                            className="form-control"
                             placeholder="Product or service"
                         />
                         )}
@@ -1691,7 +1710,7 @@ function removeItem(itemId: string) {
                                 Number(event.target.value),
                             )
                             }
-                            className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+                            className="form-control"
                         />
                         )}
 
@@ -1710,10 +1729,10 @@ function removeItem(itemId: string) {
                               Number(event.target.value),
                             )
                           }
-                          className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+                          className="form-control"
                         />
                       ) : (
-                        <div className="flex min-h-11 items-center rounded-lg bg-slate-100 px-3 py-2.5">
+                        <div className="flex min-h-11 items-center rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2.5">
                           <span className="text-sm font-medium text-slate-700">
                             ₹{draftItem.unit_price.toFixed(2)} per unit
                           </span>
@@ -1733,10 +1752,10 @@ function removeItem(itemId: string) {
                           onChange={(event) =>
                             updateDraftLineTotal(event.target.value)
                           }
-                          className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+                          className="form-control"
                         />
                       ) : (
-                        <div className="flex min-h-11 items-center rounded-lg bg-white px-3 py-2.5">
+                        <div className="flex min-h-11 items-center rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5">
                           <span className="text-sm font-semibold text-slate-900">
                             ₹
                             {(
@@ -1766,7 +1785,7 @@ function removeItem(itemId: string) {
                                 event.target.value,
                             )
                             }
-                            className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+                            className="form-control"
                         />
                         )}
 
@@ -1786,7 +1805,7 @@ function removeItem(itemId: string) {
                                 event.target.value,
                             )
                             }
-                            className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+                            className="form-control"
                         />
                         )}
 
@@ -1804,7 +1823,7 @@ function removeItem(itemId: string) {
                               updateCustomValue(column.key, event.target.value)
                             }
                             disabled={saving}
-                            className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500 disabled:cursor-not-allowed disabled:bg-slate-50"
+                            className="form-control"
                           >
 
                           <option value="">Select unit</option>
@@ -1843,7 +1862,7 @@ function removeItem(itemId: string) {
                             onChange={(event) =>
                               updateCustomValue(column.key, event.target.value)
                             }
-                            className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+                            className="form-control"
                             placeholder={column.label}
                           />
                         )}
@@ -1855,7 +1874,7 @@ function removeItem(itemId: string) {
                 type="button"
                 onClick={addOrUpdateItem}
                 disabled={!canAddOrUpdateItem || saving}
-                className="mt-5 min-h-11 w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 active:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
+                className="btn btn-primary btn-block mt-1 sm:col-span-2"
                 >
                 {editingItemId
                     ? "Update Item"
@@ -1888,29 +1907,29 @@ function removeItem(itemId: string) {
                     return (
                         <article
                           key={item.id}
-                          className={`rounded-xl border p-4 shadow-sm transition-colors ${
+                          className={`ui-card p-4 transition-colors ${
                             item.highlight_style === "yellow"
                               ? "border-amber-400 bg-amber-50 ring-1 ring-amber-200"
-                              : "border-slate-200 bg-white"
+                              : ""
                           }`}
                         >
-                        <div className="flex items-start justify-between gap-3">
-                            <div>
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="min-w-0 flex-1">
                             <p className="text-xs font-medium text-slate-500">
                                 Item {index + 1}
                             </p>
 
-                            <h4 className="mt-1 text-sm font-semibold text-slate-900">
+                            <h4 className="mt-1 break-words text-sm font-semibold leading-5 text-slate-900">
                                 {item.item_name}
                             </h4>
                             </div>
 
-                            <div className="flex flex-wrap justify-end gap-1">
+                            <div className="flex flex-wrap items-center justify-start gap-1 sm:justify-end">
                               <button
                                 type="button"
                                 onClick={() => moveItem(item.id, -1)}
                                 disabled={index === 0 || saving}
-                                className="rounded-lg px-2 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+                                className="btn btn-ghost btn-sm"
                                 aria-label={`Move ${item.item_name || `item ${index + 1}`} up`}
                               >
                                 ↑
@@ -1920,7 +1939,7 @@ function removeItem(itemId: string) {
                                 type="button"
                                 onClick={() => moveItem(item.id, 1)}
                                 disabled={index === items.length - 1 || saving}
-                                className="rounded-lg px-2 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+                                className="btn btn-ghost btn-sm"
                                 aria-label={`Move ${item.item_name || `item ${index + 1}`} down`}
                               >
                                 ↓
@@ -1930,7 +1949,7 @@ function removeItem(itemId: string) {
                                 type="button"
                                 onClick={() => duplicateItem(item.id)}
                                 disabled={saving}
-                                className="rounded-lg px-2.5 py-2 text-xs font-semibold text-indigo-600 transition hover:bg-indigo-50 disabled:opacity-50"
+                                className="btn btn-secondary btn-sm"
                               >
                                 Duplicate
                               </button>
@@ -1940,7 +1959,7 @@ function removeItem(itemId: string) {
                                 onClick={() => toggleItemHighlight(item.id)}
                                 disabled={saving}
                                 aria-pressed={item.highlight_style === "yellow"}
-                                className="rounded-lg px-2.5 py-2 text-xs font-semibold text-amber-700 transition hover:bg-amber-100 disabled:opacity-50"
+                                className="btn btn-ghost btn-sm text-amber-700"
                               >
                                 {item.highlight_style === "yellow"
                                     ? "Unhighlight"
@@ -1951,7 +1970,7 @@ function removeItem(itemId: string) {
                                 type="button"
                                 onClick={() => editItem(item)}
                                 disabled={saving}
-                                className="rounded-lg px-2.5 py-2 text-xs font-semibold text-blue-600 transition hover:bg-blue-50 active:bg-blue-100 disabled:opacity-50"
+                                className="btn btn-secondary btn-sm"
                               >
                                 Edit
                               </button>
@@ -1960,14 +1979,14 @@ function removeItem(itemId: string) {
                                 type="button"
                                 onClick={() => removeItem(item.id)}
                                 disabled={saving}
-                                className="rounded-lg px-2.5 py-2 text-xs font-semibold text-red-600 transition hover:bg-red-50 active:bg-red-100 disabled:opacity-50"
+                                className="btn btn-danger btn-sm"
                               >
                                 Remove
                               </button>
                             </div>
                         </div>
 
-                        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                        <div className="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
                             {invoiceColumns
                             .filter(
                                 (column) =>
@@ -2010,7 +2029,7 @@ function removeItem(itemId: string) {
                                     customValue ===
                                     undefined ||
                                     customValue === null
-                                    ? "â€”"
+                                    ? "—"
                                     : String(
                                         customValue,
                                         );
@@ -2019,7 +2038,7 @@ function removeItem(itemId: string) {
                                 return (
                                 <div
                                     key={column.key}
-                                    className="rounded-lg bg-slate-50 px-3 py-2"
+                                    className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2"
                                 >
                                     <p className="text-[11px] font-medium text-slate-500">
                                     {column.label}
@@ -2040,7 +2059,7 @@ function removeItem(itemId: string) {
             )}
             </section>
 
-            <section className="rounded-xl bg-slate-50 p-4 sm:p-5">
+            <section className="ui-panel p-5 sm:p-6">
               <div className="space-y-4">
                 <div className="flex justify-between gap-4 text-sm text-slate-600">
                   <span>Subtotal</span>
@@ -2052,7 +2071,7 @@ function removeItem(itemId: string) {
                 <div>
                   <label
                     htmlFor="shipping-charge"
-                    className="mb-1 block text-sm font-medium text-slate-700"
+                    className="form-label"
                   >
                     Shipping Fee
                   </label>
@@ -2072,13 +2091,13 @@ function removeItem(itemId: string) {
                         );
                       }}
                       disabled={saving}
-                      className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+                      className="form-control"
                       placeholder="0.00"
                     />
                   </div>
                 </div>
 
-                <div className="flex justify-between gap-4 border-t border-slate-200 pt-3 text-base font-bold text-slate-900 sm:text-lg">
+                <div className="flex justify-between gap-4 border-t border-slate-300 pt-5 text-lg font-bold text-slate-900 sm:text-xl">
                   <span>Grand Total</span>
                   <span>₹{total.toFixed(2)}</span>
                 </div>
@@ -2091,11 +2110,11 @@ function removeItem(itemId: string) {
               </div>
             )}
 
-            <div className="sticky bottom-0 -mx-5 border-t border-slate-200 bg-white/95 px-5 py-4 backdrop-blur sm:static sm:m-0 sm:border-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
+            <div className="sticky bottom-0 -mx-4 border-t border-slate-200 bg-white/95 px-4 py-4 backdrop-blur sm:static sm:m-0 sm:border-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
               <button
                 type="submit"
                 disabled={!canSaveBill}
-                className="min-h-12 w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 active:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
+                className="btn btn-primary btn-lg btn-block"
                 >
                 {saving
                     ? "Saving..."
@@ -2103,7 +2122,7 @@ function removeItem(itemId: string) {
               </button>
             </div>
           </form>
-        </section>
+        </div>
       </div>
     </main>
   );

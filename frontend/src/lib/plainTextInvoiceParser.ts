@@ -289,7 +289,7 @@ function parseCommaSeparatedInvoice(
     }
 
     const summaryField = line.match(
-      /^([a-z][a-z ._-]*)\s*[:\-]\s*(.*)$/i,
+      /^([a-z][a-z ._-]*)\s*[:-]\s*(.*)$/i,
     );
 
     if (summaryField) {
@@ -340,7 +340,7 @@ function parseCommaSeparatedInvoice(
     }
 
     if (section === "customer") {
-      const field = line.match(/^([a-z][a-z ._-]*)\s*[:\-]\s*(.*)$/i);
+      const field = line.match(/^([a-z][a-z ._-]*)\s*[:-]\s*(.*)$/i);
 
       if (!field) {
         warnings.push(`Unrecognized customer detail: "${line}".`);
@@ -510,8 +510,8 @@ function parseStructuredPlainTextInvoice(
   let customer_name = "";
   let customer_phone = "";
   let customer_address = "";
-  let delivery_charge: number | null = null;
-  let stated_invoice_total: number | null = null;
+  const delivery_charge: number | null = null;
+  const stated_invoice_total: number | null = null;
 
   let section: "none" | "customer" | "items" | "notes" = "none";
 
@@ -792,13 +792,13 @@ function extractCustomerDetails(
       continue;
     }
 
-    if (/^order\s*(?:no\.?|number|#)\s*[:\-]?/i.test(line)) {
+    if (/^order\s*(?:no\.?|number|#)\s*[:-]?/i.test(line)) {
       inAddressBlock = false;
       continue;
     }
 
     if (
-      /^(?:adress|address)\s+location\s*[:\-]/i.test(line) ||
+      /^(?:adress|address)\s+location\s*[:-]/i.test(line) ||
       /^https?:\/\/(?:maps\.app\.goo\.gl|goo\.gl\/maps)\//i.test(line)
     ) {
       inAddressBlock = false;
@@ -810,7 +810,7 @@ function extractCustomerDetails(
       inAddressBlock = false;
 
       const totalMatch = line.match(
-        /^total\s*[:\-]?\s*₹?\s*([\d,]+(?:\.\d{1,2})?)/i,
+        /^total\s*[:-]?\s*₹?\s*([\d,]+(?:\.\d{1,2})?)/i,
       );
 
       if (totalMatch) {
@@ -822,7 +822,7 @@ function extractCustomerDetails(
       // Supports both "delivery 50rs" and "50rs delivery".
       const deliveryMatch =
         line.match(
-          /(?:delivery|shipping|transport)\s*(?:charge|charges|fee)?\s*[:\-]?\s*₹?\s*([\d,]+(?:\.\d{1,2})?)\s*(?:rs\.?)?/i,
+          /(?:delivery|shipping|transport)\s*(?:charge|charges|fee)?\s*[:-]?\s*₹?\s*([\d,]+(?:\.\d{1,2})?)\s*(?:rs\.?)?/i,
         ) ??
         line.match(
           /₹?\s*([\d,]+(?:\.\d{1,2})?)\s*rs\.?\s*(?:delivery|shipping|transport)\b/i,
@@ -966,7 +966,7 @@ function parsePricingLine(
 
   let quantity = headerQuantity;
   let statedTotal: number | null = null;
-  let unitPrice = amounts[0];
+  const unitPrice = amounts[0];
 
   if (explicitQuantityMatch) {
     const expressionQuantity = Number(explicitQuantityMatch[1]);

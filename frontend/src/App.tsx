@@ -1,4 +1,5 @@
 import {
+  useCallback,
   lazy,
   Suspense,
   useEffect,
@@ -18,6 +19,7 @@ import {
 
 import Dashboard from "./components/dashboard/Dashboard";
 import AppNavbar from "./components/navigation/AppNavbar";
+import RouteErrorBoundary from "./components/RouteErrorBoundary";
 
 const BillEditor = lazy(
   () => import("./components/billing/BillEditor"),
@@ -121,11 +123,12 @@ type CurrentUser = {
   business_created: boolean;
 };
 
+const DATA_CACHE_MAX_AGE = 5 * 60 * 1000;
+const ASSET_CACHE_MAX_AGE = 55 * 60 * 1000;
+
 function App() {
   const navigate = useNavigate();
   const location = useLocation();
-
-  const DATA_CACHE_MAX_AGE = 5 * 60 * 1000;
 
   const [health, setHealth] =
     useState<ApiHealth | null>(null);
@@ -135,9 +138,6 @@ function App() {
 
   const [business, setBusiness] =
     useState<BusinessProfile | null>(null);
-
-  const ASSET_CACHE_MAX_AGE =
-    55 * 60 * 1000;
 
   const [logoUrl, setLogoUrl] =
     useState<string | null>(null);
@@ -310,7 +310,7 @@ function App() {
     return () => {
       subscription.unsubscribe();
     };
-  }, []);
+  }, [navigate]);
 
   async function handleSubmit(
     event: FormEvent,
@@ -448,12 +448,12 @@ function App() {
   }
 
 
-  async function loadBusinessAssets(
+  const loadBusinessAssets = useCallback(async (
     forceRefresh = false,
   ): Promise<{
     logoUrl: string | null;
     signatureUrl: string | null;
-  }> {
+  }> => {
     const now = Date.now();
 
     const cacheIsFresh =
@@ -524,7 +524,7 @@ function App() {
         signatureUrl: null,
       };
     }
-  }
+  }, [assetsLoadedAt, logoUrl, signatureUrl]);
 
 async function handleAssetLoadError() {
   if (assetRefreshInProgress.current) {
@@ -540,9 +540,9 @@ async function handleAssetLoadError() {
   }
 }
 
-  async function loadCustomers(
+  const loadCustomers = useCallback(async (
     forceRefresh = false,
-  ): Promise<Customer[] | null> {
+  ): Promise<Customer[] | null> => {
     const now = Date.now();
 
     const cacheIsFresh =
@@ -585,11 +585,11 @@ async function handleAssetLoadError() {
     } finally {
       setIsCustomersLoading(false);
     }
-  }
+  }, [customersLoadedAt, customers]);
 
-  async function loadBills(
+  const loadBills = useCallback(async (
     forceRefresh = false,
-  ) {
+  ) => {
     const now = Date.now();
 
     const cacheIsFresh =
@@ -629,7 +629,7 @@ async function handleAssetLoadError() {
     } finally {
       setIsBillsLoading(false);
     }
-  }
+  }, [billsLoadedAt]);
 
   async function handleCreateCustomer(
     customer: {
@@ -743,7 +743,9 @@ async function handleAssetLoadError() {
   }
 
 
-  async function loadProducts(forceRefresh = false) {
+  const loadProducts = useCallback(async (
+    forceRefresh = false,
+  ) => {
     const now = Date.now();
 
     const cacheIsFresh =
@@ -781,7 +783,7 @@ async function handleAssetLoadError() {
     } finally {
       setIsProductsLoading(false);
     }
-  }
+  }, [productsLoadedAt]);
 
   async function handleCreateProduct(
     values: {
@@ -1047,30 +1049,51 @@ async function handleAssetLoadError() {
       return;
     }
 
-    if (location.pathname === "/bills") {
-      void loadBills();
-    }
+    let cancelled = false;
 
-    const needsCustomers =
-      location.pathname === "/customers" ||
-      location.pathname === "/bills/new" ||
-      /^\/bills\/[^/]+\/edit$/.test(location.pathname);
+    void Promise.resolve().then(() => {
+      if (cancelled) {
+        return;
+      }
 
-    if (needsCustomers) {
-      void loadCustomers();
-    }
-    const needsProducts =
-      location.pathname === "/products" ||
-      location.pathname === "/products/new" ||
-      /^\/products\/[^/]+\/edit$/.test(location.pathname);
+      if (
+        location.pathname === "/bills" ||
+        location.pathname === "/dashboard"
+      ) {
+        void loadBills();
+      }
 
-    if (needsProducts) {
-      void loadProducts();
-    }
+      const needsCustomers =
+        location.pathname === "/dashboard" ||
+        location.pathname === "/customers" ||
+        location.pathname === "/bills/new" ||
+        /^\/bills\/[^/]+\/edit$/.test(location.pathname);
+
+      if (needsCustomers) {
+        void loadCustomers();
+      }
+
+      const needsProducts =
+        location.pathname === "/dashboard" ||
+        location.pathname === "/products" ||
+        location.pathname === "/products/new" ||
+        /^\/products\/[^/]+\/edit$/.test(location.pathname);
+
+      if (needsProducts) {
+        void loadProducts();
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, [
     currentUser,
     business,
     location.pathname,
+    loadBills,
+    loadCustomers,
+    loadProducts,
   ]);
 
 
@@ -1156,6 +1179,7 @@ async function handleAssetLoadError() {
     business,
     location.pathname,
     savedBill?.id,
+    loadBusinessAssets,
   ]);
 
   // Load product when directly navigating to product edit.
@@ -1250,6 +1274,7 @@ async function handleAssetLoadError() {
     location.pathname,
     products,
     editingProduct?.id,
+    loadProducts,
   ]);
 
   // Load customer when directly navigating to customer edit.
@@ -1333,6 +1358,7 @@ async function handleAssetLoadError() {
     location.pathname,
     customers,
     editingCustomer?.id,
+    loadCustomers,
   ]);
 
   if (authInitializing) {
@@ -1381,6 +1407,7 @@ async function handleAssetLoadError() {
       <>
       {navigation}
 
+      <RouteErrorBoundary>
       <Suspense
         fallback={
           <main className="min-h-screen bg-slate-100 px-4 py-6">
@@ -1407,18 +1434,25 @@ async function handleAssetLoadError() {
             path="/dashboard"
             element={
               <Dashboard
-                onCreateBill={() => {
-                  navigate("/bills/new");
-                }}
-                onBills={() => {
-                  navigate("/bills");
-                }}
-                onCustomers={() => {
-                  navigate("/customers");
-                }}
-                onBusinessProfile={() => {
-                  navigate("/business");
-                }}
+                business={business}
+                bills={bills}
+                customers={customers}
+                products={products}
+                isBillsLoading={isBillsLoading}
+                isCustomersLoading={isCustomersLoading}
+                isProductsLoading={isProductsLoading}
+                billsError={billsError}
+                customersError={customersError}
+                productsError={productsError}
+                onCreateBill={() => navigate("/bills/new")}
+                onBills={() => navigate("/bills")}
+                onCustomers={() => navigate("/customers")}
+                onProducts={() => navigate("/products")}
+                onReports={() => navigate("/reports")}
+                onBusinessProfile={() => navigate("/business")}
+                onRetryBills={() => void loadBills(true)}
+                onRetryCustomers={() => void loadCustomers(true)}
+                onRetryProducts={() => void loadProducts(true)}
                 onLogout={handleLogout}
               />
             }
@@ -1789,6 +1823,7 @@ async function handleAssetLoadError() {
             path="/customers/new"
             element={
               <CustomerForm
+                key="new-customer"
                 customer={undefined}
                 isSaving={isCustomerSaving}
                 error={customerSaveError}
@@ -1815,6 +1850,7 @@ async function handleAssetLoadError() {
                 </main>
               ) : (
                 <CustomerForm
+                  key={editingCustomer?.id ?? location.pathname}
                   customer={
                     editingCustomer
                       ? {
@@ -1878,6 +1914,7 @@ async function handleAssetLoadError() {
             path="/products/new"
             element={
               <ProductForm
+                key="new-product"
                 product={undefined}
                 isSaving={isProductSaving}
                 error={productSaveError}
@@ -1898,6 +1935,7 @@ async function handleAssetLoadError() {
               editingProduct.id ===
                 location.pathname.split("/")[2] ? (
                 <ProductForm
+                  key={editingProduct.id}
                   product={editingProduct}
                   isSaving={isProductSaving}
                   error={productSaveError}
@@ -1932,6 +1970,7 @@ async function handleAssetLoadError() {
           />
         </Routes>
         </Suspense>
+      </RouteErrorBoundary>
       </>
     );
   }
@@ -2044,13 +2083,20 @@ async function handleAssetLoadError() {
           </form>
 
           {message && (
-            <div className="mt-4 rounded-xl bg-blue-50 p-3 text-sm text-blue-800">
+            <div
+              role="status"
+              aria-live="polite"
+              className="mt-4 rounded-xl bg-blue-50 p-3 text-sm text-blue-800"
+            >
               {message}
             </div>
           )}
 
           {error && (
-            <div className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-700">
+            <div
+              role="alert"
+              className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-700"
+            >
               {error}
             </div>
           )}

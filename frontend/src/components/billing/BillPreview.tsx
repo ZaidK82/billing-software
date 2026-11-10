@@ -531,14 +531,14 @@ function BillPreview({
   }
 
   return (
-    <main className="min-h-screen bg-slate-100 px-4 py-6 sm:px-6 lg:px-8">
+    <main className="min-h-screen bg-slate-50 px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto w-full max-w-4xl">
         <div className="mb-4 flex flex-col gap-3 sm:mb-6">
           <div className="flex flex-wrap gap-x-4 gap-y-2">
             <button
               type="button"
               onClick={onBack}
-              className="min-h-10 rounded-lg px-1 text-sm font-medium text-blue-600 transition hover:bg-blue-50 active:bg-blue-100"
+              className="btn btn-ghost btn-sm"
             >
               ← Dashboard
             </button>
@@ -546,7 +546,7 @@ function BillPreview({
             <button
               type="button"
               onClick={onBackToBills}
-              className="min-h-10 rounded-lg px-1 text-sm font-medium text-blue-600 transition hover:bg-blue-50 active:bg-blue-100"
+              className="btn btn-ghost btn-sm"
             >
               ← Bills
             </button>
@@ -557,7 +557,7 @@ function BillPreview({
               type="button"
               onClick={handleDownloadPdf}
               disabled={isDownloading}
-              className="min-h-11 w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 active:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+              className="btn btn-secondary btn-block sm:w-auto"
             >
               {isDownloading
                 ? "Preparing PDF..."
@@ -567,7 +567,7 @@ function BillPreview({
             <button
               type="button"
               onClick={onCreateNew}
-              className="min-h-11 w-full rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 active:bg-blue-800 sm:w-auto"
+              className="btn btn-primary btn-block sm:w-auto"
             >
               New Bill
             </button>
@@ -575,13 +575,16 @@ function BillPreview({
         </div>
 
         {downloadError && (
-          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div
+            role="alert"
+            className="mb-4 rounded-xl border border-[var(--danger-border)] bg-[var(--danger-subtle)] px-4 py-3 text-sm text-[var(--danger)]"
+          >
             {downloadError}
           </div>
         )}
 
 
-        <section className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+        <section className="ui-card mb-4 p-4 sm:p-5">
           <div className="mb-4">
             <h2 className="text-lg font-semibold text-slate-900">
               Invoice Appearance
@@ -662,7 +665,7 @@ function BillPreview({
               ] as const
             ).map((setting) => (
               <label key={setting.key} className="block">
-                <span className="mb-2 block text-sm font-medium text-slate-700">
+                <span className="form-label">
                   {setting.label}
                 </span>
 
@@ -684,7 +687,7 @@ function BillPreview({
 
                       setAppearanceMessage(null);
                     }}
-                    className="w-full accent-blue-600 disabled:opacity-50"
+                    className="w-full accent-[var(--brand)] disabled:opacity-50"
                   />
 
                   <span className="w-16 shrink-0 text-right text-sm tabular-nums text-slate-700">
@@ -731,7 +734,7 @@ function BillPreview({
               ] as const
             ).map((setting) => (
               <label key={setting.key} className="block">
-                <span className="mb-2 block text-sm font-medium text-slate-700">
+                <span className="form-label">
                   {setting.label}
                 </span>
 
@@ -753,7 +756,7 @@ function BillPreview({
 
                       setAppearanceMessage(null);
                     }}
-                    className="w-full accent-blue-600 disabled:opacity-50"
+                    className="w-full accent-[var(--brand)] disabled:opacity-50"
                   />
 
                   <span className="w-16 shrink-0 text-right text-sm tabular-nums text-slate-700">
@@ -776,7 +779,7 @@ function BillPreview({
                 });
                 setAppearanceMessage(null);
               }}
-              className="min-h-11 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              className="btn btn-secondary btn-block sm:w-auto"
             >
               Reset to defaults
             </button>
@@ -785,7 +788,7 @@ function BillPreview({
               type="button"
               disabled={isSavingAppearance}
               onClick={handleSaveAppearance}
-              className="min-h-11 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className="btn btn-primary btn-block sm:w-auto"
             >
               {isSavingAppearance
                 ? "Saving appearance..."
@@ -961,6 +964,10 @@ function BillPreview({
           </div>
 
           <div className="overflow-x-auto">
+            <p className="px-5 py-2 text-xs text-slate-500 sm:hidden">
+              Scroll horizontally to view all invoice columns →
+            </p>
+
             <table
               className="w-full min-w-[520px]"
               style={{ fontSize: `${appearance.table_text_size}pt` }}
@@ -1049,133 +1056,6 @@ function BillPreview({
                 ))}
               </tbody>
             </table>
-          </div>
-
-          <div className="border-t border-slate-200 bg-slate-50 px-5 py-5 sm:px-8">
-            <h2 className="text-base font-semibold text-slate-900">
-              Advanced: Historical Purchase Cost
-            </h2>
-
-            <p className="mt-1 text-sm text-slate-600">
-              Correct recorded purchase costs for this invoice.
-              These values are internal and do not appear on the invoice PDF.
-              Corrections do not affect selling prices, quantities, totals, or stock.
-            </p>
-
-            {purchaseCostMessage && (
-              <p className="mt-3 rounded-lg bg-green-50 p-3 text-sm text-green-700">
-                {purchaseCostMessage}
-              </p>
-            )}
-
-            {purchaseCostError && (
-              <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">
-                {purchaseCostError}
-              </p>
-            )}
-
-            <div className="mt-4 space-y-3">
-              {localItems.map((item) => (
-                <div
-                  key={item.id}
-                  className="rounded-xl border border-slate-200 bg-white p-3"
-                >
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <p className="font-medium text-slate-900">
-                        {item.item_name}
-                      </p>
-
-                      <p className="mt-1 text-sm text-slate-600">
-                        Recorded cost:{" "}
-                        {item.purchase_price_snapshot !== null
-                          ? formatMoney(item.purchase_price_snapshot)
-                          : "Not recorded"}
-                        {item.unit_name
-                          ? ` / ${item.unit_name}`
-                          : ""}
-                      </p>
-                    </div>
-
-                    <button
-                      type="button"
-                      disabled={isSavingPurchaseCost}
-                      onClick={() => {
-                        setCorrectingItemId(item.id);
-                        setPurchaseCostInput(
-                          item.purchase_price_snapshot ?? "",
-                        );
-                        setPurchaseCostError(null);
-                        setPurchaseCostMessage(null);
-                      }}
-                      className="min-h-10 rounded-lg border border-amber-300 px-3 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-50 disabled:opacity-50"
-                    >
-                      {item.purchase_price_snapshot === null
-                        ? "Record Cost"
-                        : "Correct Cost"}
-                    </button>
-                  </div>
-
-                  {correctingItemId === item.id && (
-                    <div className="mt-3 border-t border-slate-100 pt-3">
-                      <label
-                        htmlFor={`purchase-cost-${item.id}`}
-                        className="mb-1 block text-sm font-medium text-slate-700"
-                      >
-                        Correct purchase cost
-                        {item.unit_name
-                          ? ` per ${item.unit_name}`
-                          : ""}
-                      </label>
-
-                      <input
-                        id={`purchase-cost-${item.id}`}
-                        type="number"
-                        min="0"
-                        max="9999999999.99"
-                        step="0.01"
-                        value={purchaseCostInput}
-                        onChange={(event) => {
-                          setPurchaseCostInput(event.target.value);
-                          setPurchaseCostError(null);
-                        }}
-                        disabled={isSavingPurchaseCost}
-                        className="min-h-11 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                        placeholder="Enter historical purchase cost"
-                      />
-
-                      <div className="mt-3 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                        <button
-                          type="button"
-                          disabled={isSavingPurchaseCost}
-                          onClick={() => {
-                            setCorrectingItemId(null);
-                            setPurchaseCostInput("");
-                            setPurchaseCostError(null);
-                          }}
-                          className="min-h-10 rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                        >
-                          Cancel
-                        </button>
-
-                        <button
-                          type="button"
-                          disabled={isSavingPurchaseCost}
-                          onClick={() =>
-                            void handleCorrectPurchaseCost(item.id)
-                          }
-                          className="min-h-10 rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
-                        >
-                          {isSavingPurchaseCost
-                            ? "Saving..."
-                            : "Confirm Correction"}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
           </div>
 
           <div className="border-t border-slate-200 px-5 py-6 sm:px-8 sm:py-7">
@@ -1269,6 +1149,139 @@ function BillPreview({
             <p className="text-sm font-medium text-slate-600">
               Thank you for your business.
             </p>
+          </div>
+        </section>
+
+        {/* Internal historical purchase cost management */}
+        <section className="ui-card mt-4 p-5 sm:p-6">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="text-base font-semibold text-slate-900">
+              Historical Purchase Cost
+            </h2>
+
+            <span className="w-fit rounded-full bg-[var(--warning-subtle)] px-2.5 py-1 text-xs font-medium text-[var(--warning)]">
+              Advanced
+            </span>
+          </div>
+
+          <p className="mt-2 text-sm leading-6 text-slate-600">
+            Correct recorded purchase costs for this invoice.
+            These values are internal and do not appear on the invoice PDF.
+            Corrections do not affect selling prices, quantities, totals, or stock.
+          </p>
+
+          {purchaseCostMessage && (
+            <p
+              role="status"
+              className="mt-3 rounded-lg border border-[var(--success-border)] bg-[var(--success-subtle)] p-3 text-sm text-[var(--success)]"
+            >
+              {purchaseCostMessage}
+            </p>
+          )}
+
+          {purchaseCostError && (
+            <p
+              role="alert"
+              className="mt-3 rounded-lg border border-[var(--danger-border)] bg-[var(--danger-subtle)] p-3 text-sm text-[var(--danger)]"
+            >
+              {purchaseCostError}
+            </p>
+          )}
+
+          <div className="mt-4 space-y-3">
+            {localItems.map((item) => (
+              <div key={item.id} className="ui-panel p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="break-words font-medium text-slate-900">
+                      {item.item_name}
+                    </p>
+
+                    <p className="mt-1 text-sm text-slate-600">
+                      Recorded cost:{" "}
+                      {item.purchase_price_snapshot !== null
+                        ? formatMoney(item.purchase_price_snapshot)
+                        : "Not recorded"}
+                      {item.unit_name ? ` / ${item.unit_name}` : ""}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={isSavingPurchaseCost}
+                    onClick={() => {
+                      setCorrectingItemId(item.id);
+                      setPurchaseCostInput(
+                        item.purchase_price_snapshot ?? "",
+                      );
+                      setPurchaseCostError(null);
+                      setPurchaseCostMessage(null);
+                    }}
+                    className="btn btn-secondary btn-block sm:w-auto"
+                  >
+                    {item.purchase_price_snapshot === null
+                      ? "Record Cost"
+                      : "Correct Cost"}
+                  </button>
+                </div>
+
+                {correctingItemId === item.id && (
+                  <div className="mt-3 border-t border-slate-200 pt-3">
+                    <label
+                      htmlFor={`purchase-cost-${item.id}`}
+                      className="form-label"
+                    >
+                      Correct purchase cost
+                      {item.unit_name ? ` per ${item.unit_name}` : ""}
+                    </label>
+
+                    <input
+                      id={`purchase-cost-${item.id}`}
+                      type="number"
+                      min="0"
+                      max="9999999999.99"
+                      step="0.01"
+                      value={purchaseCostInput}
+                      onChange={(event) => {
+                        setPurchaseCostInput(event.target.value);
+                        setPurchaseCostError(null);
+                      }}
+                      disabled={isSavingPurchaseCost}
+                      className="form-control"
+                      placeholder="Enter historical purchase cost"
+                    />
+
+                    <div className="mt-3 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                      <button
+                        type="button"
+                        disabled={isSavingPurchaseCost}
+                        onClick={() => {
+                          setCorrectingItemId(null);
+                          setPurchaseCostInput("");
+                          setPurchaseCostError(null);
+                        }}
+                        className="btn btn-secondary btn-block sm:w-auto"
+                      >
+                        Cancel
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={isSavingPurchaseCost}
+                        onClick={() =>
+                          void handleCorrectPurchaseCost(item.id)
+                        }
+                        className="btn btn-primary btn-block sm:w-auto"
+                      >
+                        {isSavingPurchaseCost
+                          ? "Saving..."
+                          : "Confirm Correction"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         </section>
 

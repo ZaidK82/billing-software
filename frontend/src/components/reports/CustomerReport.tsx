@@ -148,9 +148,16 @@ function CustomerReport() {
     }
   }, [startDate, endDate]);
   useEffect(() => {
-    void loadReport();
+    let cancelled = false;
+
+    void Promise.resolve().then(() => {
+      if (!cancelled) {
+        void loadReport();
+      }
+    });
 
     return () => {
+      cancelled = true;
       requestIdRef.current += 1;
     };
   }, [loadReport]);
@@ -312,7 +319,7 @@ function CustomerReport() {
               type="button"
               onClick={() => void loadReport()}
               disabled={loading}
-              className="rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+              className="btn btn-primary"
             >
               {loading ? "Loading..." : "Refresh report"}
             </button>
@@ -333,7 +340,11 @@ function CustomerReport() {
         )}
 
         {loading && (
-          <div className="rounded-xl border border-slate-200 bg-white p-10 text-center">
+          <div
+            role="status"
+            aria-live="polite"
+            className="rounded-xl border border-slate-200 bg-white p-10 text-center"
+          >
             <p className="text-sm text-slate-600">
               Loading customer insights...
             </p>

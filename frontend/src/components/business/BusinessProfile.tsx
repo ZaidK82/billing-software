@@ -1,3 +1,4 @@
+
 import {
   useEffect,
   useState,
@@ -63,9 +64,7 @@ function BusinessProfilePage({
   const [signatureUrl, setSignatureUrl] = useState<string | null>(null);
   const [loadingAssets, setLoadingAssets] = useState(true);
 
-
-
-    useEffect(() => {
+  useEffect(() => {
     let cancelled = false;
 
     async function loadBusinessAssets() {
@@ -125,8 +124,6 @@ function BusinessProfilePage({
       cancelled = true;
     };
   }, [business.logo_path, business.signature_path]);
-
-
 
   function updateBusiness(
     changes: Partial<BusinessProfile>,
@@ -232,9 +229,10 @@ function BusinessProfilePage({
 
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mx-auto w-full max-w-2xl">
-        <section className="rounded-2xl bg-white p-5 shadow-sm sm:p-6 lg:p-8">
-          <div className="mb-6">
+      <div className="mx-auto w-full max-w-4xl">
+        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          {/* Page header */}
+          <div className="border-b border-slate-200 bg-slate-50/70 p-5 sm:p-7">
             <div className="flex items-center justify-between">
               <button
                 type="button"
@@ -249,7 +247,7 @@ function BusinessProfilePage({
               Billing Software
             </p>
 
-            <h1 className="mt-2 text-2xl font-bold text-slate-900">
+            <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">
               Business Profile
             </h1>
 
@@ -270,7 +268,7 @@ function BusinessProfilePage({
               <button
                 type="button"
                 onClick={onCreateBill}
-                className="min-h-11 rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 active:bg-slate-950"
+                className="btn btn-primary btn-block"
               >
                 Create Bill
               </button>
@@ -285,9 +283,10 @@ function BusinessProfilePage({
             </div>
           </div>
 
+          {/* Business details form */}
           <form
             onSubmit={onSubmit}
-            className="space-y-4"
+            className="space-y-6 p-5 sm:p-7"
           >
             <div>
               <label
@@ -517,9 +516,8 @@ function BusinessProfilePage({
               </p>
             </div>
 
-
-
-            <section className="rounded-xl border border-slate-200 p-4">
+            {/* Invoice numbering */}
+            <section className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5">
               <h2 className="text-lg font-semibold text-slate-900">
                 Invoice Numbering
               </h2>
@@ -592,7 +590,7 @@ function BusinessProfilePage({
                   </p>
                 </div>
 
-                <div className="rounded-lg bg-slate-50 p-3">
+                <div className="rounded-lg bg-white p-3">
                   <p className="text-xs font-medium text-slate-500">
                     Format preview
                   </p>
@@ -610,12 +608,10 @@ function BusinessProfilePage({
               </div>
             </section>
 
-
-
             <button
               type="submit"
               disabled={saving}
-              className="min-h-11 w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 active:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
+              className="btn btn-primary btn-block"
             >
               {saving
                 ? "Saving..."
@@ -623,7 +619,8 @@ function BusinessProfilePage({
             </button>
           </form>
 
-          <section className="mt-6 border-t border-slate-200 pt-6">
+          {/* Invoice branding */}
+          <section className="border-t border-slate-200 p-5 sm:p-7">
             <h2 className="text-lg font-semibold text-slate-900">
               Invoice Branding
             </h2>
@@ -633,7 +630,7 @@ function BusinessProfilePage({
               invoices.
             </p>
 
-            <div className="mt-4 space-y-4">
+            <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
               <div className="rounded-xl border border-slate-200 p-4">
                 <label
                   htmlFor="business-logo"
@@ -698,7 +695,7 @@ function BusinessProfilePage({
                 )}
 
                 {uploadingAsset === "logo" && (
-                  <p className="mt-2 text-sm text-blue-600">
+                  <p role="status" className="mt-2 text-sm text-blue-600">
                     Uploading logo...
                   </p>
                 )}
@@ -771,7 +768,7 @@ function BusinessProfilePage({
                 )}
 
                 {uploadingAsset === "signature" && (
-                  <p className="mt-2 text-sm text-blue-600">
+                  <p role="status" className="mt-2 text-sm text-blue-600">
                     Uploading signature...
                   </p>
                 )}
@@ -779,30 +776,44 @@ function BusinessProfilePage({
             </div>
 
             {uploadError && (
-              <div className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-700">
+              <div
+                role="alert"
+                className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+              >
                 {uploadError}
               </div>
             )}
           </section>
 
-          <InvoiceColumnManager
-            business={business}
-            onBusinessChange={onBusinessChange}
-          />
+          {/* Invoice column configuration */}
+          <div className="border-t border-slate-200 p-5 sm:p-7">
+            <InvoiceColumnManager
+              business={business}
+              onBusinessChange={onBusinessChange}
+            />
+          </div>
 
-          {message && (
-            <div className="mt-4 rounded-xl bg-green-50 p-3 text-sm text-green-800">
-              {message}
-            </div>
-          )}
+          {/* Save and session feedback */}
+          <div className="border-t border-slate-200 p-5 sm:p-7">
+            {message && (
+              <div
+                role="status"
+                aria-live="polite"
+                className="mb-4 rounded-xl border border-green-200 bg-green-50 p-3 text-sm text-green-800"
+              >
+                {message}
+              </div>
+            )}
 
-          {error && (
-            <div className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-700">
-              {error}
-            </div>
-          )}
+            {error && (
+              <div
+                role="alert"
+                className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+              >
+                {error}
+              </div>
+            )}
 
-          <div className="mt-6 border-t border-slate-200 pt-4">
             <div className="mb-4 text-xs text-slate-500">
               Signed in as {currentUserRole}
             </div>

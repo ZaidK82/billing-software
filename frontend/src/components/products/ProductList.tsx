@@ -1002,8 +1002,8 @@ function ProductList({
   }
 
   return (
-    <main className="min-h-screen bg-slate-100 px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mx-auto w-full max-w-4xl">
+    <main className="min-h-screen bg-slate-50 px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mx-auto w-full max-w-5xl">
         <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <button
             type="button"
@@ -1158,24 +1158,42 @@ function ProductList({
               </div>
 
               <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-                <input
-                  value={importSearch}
-                  onChange={(event) => setImportSearch(event.target.value)}
-                  placeholder="Search product name or serial number..."
-                  className="min-h-10 min-w-0 flex-1 rounded-lg border border-slate-300 px-3 text-sm"
-                />
+                <div className="min-w-0 flex-1">
+                  <label
+                    htmlFor="pdf-import-search"
+                    className="form-label"
+                  >
+                    Search imported products
+                  </label>
+                  <input
+                    id="pdf-import-search"
+                    value={importSearch}
+                    onChange={(event) => setImportSearch(event.target.value)}
+                    placeholder="Search product name or serial number..."
+                    className="form-control"
+                  />
+                </div>
 
-                <select
-                  value={importFilter}
-                  onChange={(event) => setImportFilter(event.target.value as typeof importFilter)}
-                  className="min-h-10 rounded-lg border border-slate-300 px-3 text-sm"
-                >
-                  <option value="all">All products</option>
-                  <option value="new">New products</option>
-                  <option value="existing">Existing products</option>
-                  <option value="changed">Price changes</option>
-                  <option value="review">Needs review</option>
-                </select>
+                <div className="sm:w-52">
+                  <label
+                    htmlFor="pdf-import-filter"
+                    className="form-label"
+                  >
+                    Filter products
+                  </label>
+                  <select
+                    id="pdf-import-filter"
+                    value={importFilter}
+                    onChange={(event) => setImportFilter(event.target.value as typeof importFilter)}
+                    className="form-control"
+                  >
+                    <option value="all">All products</option>
+                    <option value="new">New products</option>
+                    <option value="existing">Existing products</option>
+                    <option value="changed">Price changes</option>
+                    <option value="review">Needs review</option>
+                  </select>
+                </div>
               </div>
 
               <div className="mt-4 space-y-3">
@@ -1379,7 +1397,7 @@ function ProductList({
                   type="button"
                   disabled={isImportConfirming || importPreview.products.length === 0}
                   onClick={() => void handleConfirmProductImport()}
-                  className="min-h-11 rounded-xl bg-green-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50"
+                  className="btn btn-primary"
                 >
                   {isImportConfirming ? "Importing..." : "Confirm Import"}
                 </button>
@@ -1698,8 +1716,8 @@ function ProductList({
                                   }
                                   className={`min-h-9 rounded-lg px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${
                                     decision?.action === "update"
-                                      ? "bg-green-600 text-white"
-                                      : "bg-green-50 text-green-700"
+                                      ? "bg-blue-600 text-white"
+                                      : "bg-blue-50 text-blue-700"
                                   }`}
                                 >
                                   Update
@@ -1722,11 +1740,15 @@ function ProductList({
 
                           {product.match_status === "ambiguous" && (
                             <div>
-                              <label className="mb-1 block text-sm font-medium text-slate-700">
+                              <label
+                                htmlFor={`excel-import-match-${product.serial_number}`}
+                                className="form-label"
+                              >
                                 Select the matching catalogue product
                               </label>
 
                               <select
+                                id={`excel-import-match-${product.serial_number}`}
                                 value={decision?.product_id ?? ""}
                                 onChange={(event) => {
                                   const productId = event.target.value;
@@ -1817,7 +1839,7 @@ function ProductList({
                       excelImportPreview.products.length === 0
                     }
                     onClick={() => void handleConfirmProductExcelImport()}
-                    className="min-h-11 rounded-xl bg-green-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50"
+                    className="btn btn-primary"
                   >
                     {isExcelImportConfirming
                       ? "Importing..."
@@ -1844,12 +1866,19 @@ function ProductList({
           </div>
         )}
 
-        <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">
-              Product Catalogue
-            </h1>
-            <p className="mt-1 text-sm text-slate-500 sm:text-base">
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+                Product Catalogue
+              </h1>
+
+              <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600">
+                {products.length} {products.length === 1 ? "product" : "products"}
+              </span>
+            </div>
+
+            <p className="mt-2 text-sm text-slate-500 sm:text-base">
               Manage reusable products, prices, and stock.
             </p>
           </div>
@@ -1858,7 +1887,7 @@ function ProductList({
             type="button"
             onClick={onRefresh}
             disabled={isLoading}
-            className="min-h-10 self-start rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50 sm:self-auto"
+            className="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
           >
             {isLoading ? "Refreshing..." : "↻ Refresh"}
           </button>
@@ -2093,153 +2122,239 @@ function ProductList({
               return (
                 <article
                   key={product.id}
-                  className="rounded-2xl bg-white p-4 shadow-sm sm:p-5"
+                  className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
                 >
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0">
-                      <h2 className="break-words font-semibold text-slate-900">
-                        {product.name}
-                      </h2>
+                  <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_240px]">
 
-                      {product.description && (
-                        <p className="mt-1 whitespace-pre-line break-words text-sm text-slate-600">
-                          {product.description}
-                        </p>
-                      )}
+                    {/* Product information */}
+                    <div className="min-w-0 p-5 sm:p-6">
 
-                    <div className="mt-2 space-y-1 text-sm">
-                      <p className="font-medium text-slate-800">
-                        Selling price: ₹{Number(product.default_unit_price).toFixed(2)} / {product.base_unit}
-                      </p>
+                      {/* Product heading */}
+                      <div>
+                        <h2 className="break-words text-lg font-bold tracking-tight text-slate-950">
+                          {product.name}
+                        </h2>
 
-                      <p className="text-slate-600">
-                        Purchase price:{" "}
-                        {product.purchase_price !== null
-                          ? `₹${Number(product.purchase_price).toFixed(2)} / ${product.base_unit}`
-                          : "Not recorded"}
-                      </p>
-                    </div>
-
-                      <p className="mt-1 text-sm text-slate-600">
-                        Base unit: <span className="font-medium">{product.base_unit}</span>
-                      </p>
-
-                      {product.selling_units.length > 0 && (
-                        <div className="mt-2 space-y-1">
-                          <p className="text-sm font-medium text-slate-700">
-                            Selling units:
-                          </p>
-
-                          {product.selling_units.map((unit) => (
-                            <p key={unit.name} className="text-sm text-slate-600">
-                              **{unit.name}**
-                              {" — "}
-                              1 {unit.name} = {unit.factor} {product.base_unit}
-                              {" — "}
-                              Selling price:{" "}
-                              {unit.price !== null && unit.price !== undefined
-                                ? `₹${Number(unit.price).toFixed(2)}`
-                                : `₹${(Number(product.default_unit_price) * Number(unit.factor)).toFixed(2)} (proportional)`}
-                            </p>
-                          ))}
-                        </div>
-                      )}
-
-                      <div className="mt-3 space-y-1 text-sm">
-                        <p className="text-slate-700">
-                          Stock tracking:{" "}
-                          <span className={tracked ? "font-semibold text-green-700" : "font-semibold text-slate-500"}>
-                            {tracked ? "Enabled" : "Disabled"}
-                          </span>
-                        </p>
-
-                        <p className="text-slate-700">
-                          Stock balance:{" "}
-                          <span className="font-semibold">
-                            {initialized
-                            ? `${formatQuantity(product.stock_quantity!)} ${product.base_unit}`
-                            : "Not initialized"}
-                          </span>
-                        </p>
-
-                        {!tracked && initialized && (
-                          <p className="text-xs text-slate-500">
-                            The saved balance is retained; invoice stock deduction is disabled.
+                        {product.description && (
+                          <p className="mt-1 whitespace-pre-line break-words text-sm leading-6 text-slate-500">
+                            {product.description}
                           </p>
                         )}
                       </div>
+
+                      {/* Pricing */}
+                      <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div className="rounded-xl border border-blue-100 bg-blue-50/70 p-4">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">
+                            Selling price
+                          </p>
+
+                          <p className="mt-2 break-words text-lg font-bold tabular-nums text-blue-950">
+                            ₹{Number(product.default_unit_price).toFixed(2)}
+                          </p>
+
+                          <p className="mt-1 text-xs text-blue-700">
+                            Per {product.base_unit}
+                          </p>
+                        </div>
+
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Purchase price
+                          </p>
+
+                          <p className="mt-2 break-words text-lg font-bold tabular-nums text-slate-900">
+                            {product.purchase_price !== null
+                              ? `₹${Number(product.purchase_price).toFixed(2)}`
+                              : "Not recorded"}
+                          </p>
+
+                          <p className="mt-1 text-xs text-slate-500">
+                            {product.purchase_price !== null
+                              ? `Per ${product.base_unit}`
+                              : "No purchase price available"}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Product details */}
+                      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+
+                        {/* Unit information */}
+                        <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-4">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Product units
+                          </p>
+
+                          <p className="mt-2 text-sm text-slate-700">
+                            Base unit:{" "}
+                            <span className="font-semibold text-slate-900">
+                              {product.base_unit}
+                            </span>
+                          </p>
+
+                          {product.selling_units.length > 0 ? (
+                            <div className="mt-3 space-y-2">
+                              <p className="text-xs font-semibold text-slate-600">
+                                Selling units
+                              </p>
+
+                              {product.selling_units.map((unit) => (
+                                <div
+                                  key={unit.name}
+                                  className="border-t border-slate-200 pt-2"
+                                >
+                                  <p className="break-words text-sm font-semibold text-slate-800">
+                                    {unit.name}
+                                  </p>
+
+                                  <p className="mt-1 break-words text-xs leading-5 text-slate-500">
+                                    1 {unit.name} = {unit.factor} {product.base_unit}
+                                  </p>
+
+                                  <p className="mt-1 text-xs font-medium text-slate-700">
+                                    Selling price:{" "}
+                                    {unit.price !== null && unit.price !== undefined
+                                      ? `₹${Number(unit.price).toFixed(2)}`
+                                      : `₹${(
+                                          Number(product.default_unit_price) *
+                                          Number(unit.factor)
+                                        ).toFixed(2)} (proportional)`}
+                                  </p>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="mt-2 text-xs text-slate-500">
+                              No additional selling units.
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Stock information */}
+                        <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-4">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Inventory status
+                          </p>
+
+                          <div className="mt-3">
+                            <p className="text-xs text-slate-500">
+                              Stock tracking
+                            </p>
+
+                            <span
+                              className={`mt-1 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
+                                tracked
+                                  ? "bg-emerald-50 text-emerald-700"
+                                  : "bg-slate-200 text-slate-700"
+                              }`}
+                            >
+                              {tracked ? "Enabled" : "Disabled"}
+                            </span>
+                          </div>
+
+                          <div className="mt-4 border-t border-slate-200 pt-3">
+                            <p className="text-xs text-slate-500">
+                              Current stock balance
+                            </p>
+
+                            <p className="mt-1 break-words text-lg font-bold tabular-nums text-slate-950">
+                              {initialized
+                                ? `${formatQuantity(product.stock_quantity!)} ${product.base_unit}`
+                                : "Not initialized"}
+                            </p>
+                          </div>
+
+                          {!tracked && initialized && (
+                            <p className="mt-3 text-xs leading-5 text-slate-500">
+                              Saved balance is retained. Invoice stock deduction is disabled.
+                            </p>
+                          )}
+
+                          {!initialized && (
+                            <p className="mt-3 text-xs leading-5 text-amber-700">
+                              Initialize opening stock before enabling stock tracking.
+                            </p>
+                          )}
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="flex shrink-0 flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => onEditProduct(product)}
-                        className="min-h-10 rounded-lg px-3 text-sm font-semibold text-blue-600 hover:bg-blue-50"
-                      >
-                        Edit
-                      </button>
+                    {/* Product actions */}
+                    <div className="flex flex-col border-t border-slate-200 bg-slate-50/60 p-4 sm:p-5 lg:border-l lg:border-t-0">
 
-                      {product.stock_quantity !== null && (
+                      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Product actions
+                      </p>
+
+                      <div className="grid grid-cols-2 gap-2 lg:grid-cols-1">
+
                         <button
                           type="button"
-                          disabled={trackingProductId !== null}
-                          onClick={() => void handleToggleStockTracking(product)}
-                          className="min-h-10 rounded-lg px-3 text-sm font-semibold text-blue-600 hover:bg-blue-50 disabled:opacity-50"
+                          onClick={() => onEditProduct(product)}
+                          className="min-h-10 rounded-lg border border-blue-100 bg-white px-3 py-2 text-sm font-semibold text-blue-700 transition hover:border-blue-200 hover:bg-blue-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
                         >
-                          {trackingProductId === product.id
-                            ? "Updating..."
-                            : product.is_stock_tracked
-                              ? "Disable Tracking"
-                              : "Enable Tracking"}
+                          Edit product
                         </button>
-                      )}
 
-                      {!initialized ? (
-                        <button
-                          type="button"
-                          onClick={() => openStockForm(product, "initialize")}
-                          className="min-h-10 rounded-lg bg-blue-50 px-3 text-sm font-semibold text-blue-700 hover:bg-blue-100"
-                        >
-                          Set Opening Stock
-                        </button>
-                      ) : tracked ? (
-                        <>
+                        {initialized && (
+                          <button
+                            type="button"
+                            disabled={trackingProductId !== null}
+                            onClick={() => void handleToggleStockTracking(product)}
+                            className="min-h-10 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {trackingProductId === product.id
+                              ? "Updating..."
+                              : tracked
+                                ? "Disable tracking"
+                                : "Enable tracking"}
+                          </button>
+                        )}
+
+                        {!initialized ? (
+                          <button
+                            type="button"
+                            onClick={() => openStockForm(product, "initialize")}
+                            className="col-span-2 min-h-10 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 lg:col-span-1"
+                          >
+                            Set opening stock
+                          </button>
+                        ) : tracked ? (
                           <button
                             type="button"
                             onClick={() => openStockForm(product, "adjust")}
-                            className="min-h-10 rounded-lg bg-blue-50 px-3 text-sm font-semibold text-blue-700 hover:bg-blue-100"
+                            className="min-h-10 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-100"
                           >
-                            Adjust Stock
+                            Adjust stock
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => void handleLoadHistory(product)}
-                            className="min-h-10 rounded-lg px-3 text-sm font-semibold text-slate-700 hover:bg-slate-100"
-                          >
-                            View History
-                          </button>
-                        </>
-                      ) : (
+                        ) : null}
+
                         <button
                           type="button"
                           onClick={() => void handleLoadHistory(product)}
-                          className="min-h-10 rounded-lg px-3 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                          className="min-h-10 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
                         >
-                          View History
+                          View history
                         </button>
-                      )}
 
-                      <button
-                        type="button"
-                        disabled={deletingId === product.id}
-                        onClick={() => void handleDelete(product)}
-                        className="min-h-10 rounded-lg px-3 text-sm font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
-                      >
-                        {deletingId === product.id ? "Deleting..." : "Delete"}
-                      </button>
+                        <button
+                          type="button"
+                          disabled={deletingId === product.id}
+                          onClick={() => void handleDelete(product)}
+                          className="col-span-2 min-h-10 rounded-lg border border-red-100 bg-white px-3 py-2 text-sm font-semibold text-red-600 transition hover:border-red-200 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 lg:col-span-1"
+                        >
+                          {deletingId === product.id ? "Deleting..." : "Delete product"}
+                        </button>
+                      </div>
+
+                      <p className="mt-4 hidden text-xs leading-5 text-slate-400 lg:block">
+                        Manage product details and inventory operations.
+                      </p>
                     </div>
                   </div>
                 </article>
+
               );
             })}
           </div>

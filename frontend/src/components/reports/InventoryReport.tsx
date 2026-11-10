@@ -169,9 +169,16 @@ function InventoryReport() {
   }, [startDate, endDate]);
 
   useEffect(() => {
-    void loadReport();
+    let cancelled = false;
+
+    void Promise.resolve().then(() => {
+      if (!cancelled) {
+        void loadReport();
+      }
+    });
 
     return () => {
+      cancelled = true;
       requestIdRef.current += 1;
     };
   }, [loadReport]);
@@ -231,6 +238,7 @@ function InventoryReport() {
             </p>
           </div>
 
+          <div className="flex flex-wrap gap-2 sm:justify-end">
           <Link
             to="/reports"
             className="inline-flex w-fit items-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
@@ -249,6 +257,7 @@ function InventoryReport() {
           >
             View Profitability Report
           </Link>
+          </div>
         </div>
 
         <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -296,7 +305,7 @@ function InventoryReport() {
               type="button"
               onClick={() => void loadReport()}
               disabled={loading}
-              className="rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+              className="btn btn-primary"
             >
               {loading ? "Loading..." : "Refresh report"}
             </button>
@@ -317,7 +326,11 @@ function InventoryReport() {
         )}
 
         {loading && (
-          <div className="rounded-xl border border-slate-200 bg-white p-10 text-center">
+          <div
+            role="status"
+            aria-live="polite"
+            className="rounded-xl border border-slate-200 bg-white p-10 text-center"
+          >
             <p className="text-sm text-slate-600">
               Loading inventory report...
             </p>

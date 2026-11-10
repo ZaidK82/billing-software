@@ -1,5 +1,5 @@
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import type { Product, SellingUnit } from "../../lib/api";
 
@@ -29,6 +29,24 @@ const STANDARD_UNITS = [
   { value: "unit", label: "Other / generic unit (unit)" },
 ];
 
+function getProductFormDefaults(product?: Product) {
+  const existingBaseUnit = product?.base_unit ?? "PCS";
+  const isStandardBaseUnit = STANDARD_UNITS.some(
+    (unit) => unit.value === existingBaseUnit,
+  );
+
+  return {
+    name: product?.name ?? "",
+    description: product?.description ?? "",
+    defaultUnitPrice: product?.default_unit_price ?? "",
+    purchasePrice: product?.purchase_price ?? "",
+    baseUnit: isStandardBaseUnit ? existingBaseUnit : "CUSTOM",
+    customBaseUnit: isStandardBaseUnit ? "" : existingBaseUnit,
+    useCustomBaseUnit: !isStandardBaseUnit,
+    sellingUnits: product?.selling_units ?? [],
+  };
+}
+
 
 type ProductFormValues = {
   name: string;
@@ -54,48 +72,31 @@ function ProductForm({
   onSubmit,
   onCancel,
 }: ProductFormProps) {
-  const [name, setName] = useState(product?.name ?? "");
-  const [description, setDescription] = useState(
-    product?.description ?? "",
-  );
+  const defaults = getProductFormDefaults(product);
+
+  const [name, setName] = useState(defaults.name);
+  const [description, setDescription] = useState(defaults.description);
   const [defaultUnitPrice, setDefaultUnitPrice] = useState(
-    product?.default_unit_price ?? "",
+    defaults.defaultUnitPrice,
   );
   const [purchasePrice, setPurchasePrice] = useState(
-    product?.purchase_price ?? "",
+    defaults.purchasePrice,
   );
-  const [baseUnit, setBaseUnit] = useState(product?.base_unit ?? "PCS");
-  const [customBaseUnit, setCustomBaseUnit] = useState("");
-  const [useCustomBaseUnit, setUseCustomBaseUnit] = useState(false);
+  const [baseUnit, setBaseUnit] = useState(defaults.baseUnit);
+  const [customBaseUnit, setCustomBaseUnit] = useState(
+    defaults.customBaseUnit,
+  );
+  const [useCustomBaseUnit, setUseCustomBaseUnit] = useState(
+    defaults.useCustomBaseUnit,
+  );
   const [useCustomSellingUnit, setUseCustomSellingUnit] = useState(false);
   const [sellingUnits, setSellingUnits] = useState<SellingUnit[]>(
-    product?.selling_units ?? [],
+    defaults.sellingUnits,
   );
   const [newUnitName, setNewUnitName] = useState("");
   const [newUnitFactor, setNewUnitFactor] = useState("");
   const [newUnitPrice, setNewUnitPrice] = useState("");
   const [unitError, setUnitError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setName(product?.name ?? "");
-    setDescription(product?.description ?? "");
-    setDefaultUnitPrice(product?.default_unit_price ?? "");
-    setPurchasePrice(product?.purchase_price ?? "");
-    const existingBaseUnit = product?.base_unit ?? "PCS";
-    const isStandardBaseUnit = STANDARD_UNITS.some(
-      (unit) => unit.value === existingBaseUnit,
-    );
-
-    setBaseUnit(isStandardBaseUnit ? existingBaseUnit : "CUSTOM");
-    setCustomBaseUnit(isStandardBaseUnit ? "" : existingBaseUnit);
-    setUseCustomBaseUnit(!isStandardBaseUnit);
-    setUseCustomSellingUnit(false);
-    setSellingUnits(product?.selling_units ?? []);
-    setNewUnitName("");
-    setNewUnitFactor("");
-    setNewUnitPrice("");
-    setUnitError(null);
-  }, [product]);
 
 function handleAddSellingUnit() {
   const name = newUnitName.trim();
@@ -176,7 +177,8 @@ function updateSellingUnitPrice(name: string, value: string) {
       }
 
       if (value.trim() === "") {
-        const { price: _price, ...unitWithoutPrice } = unit;
+        const unitWithoutPrice = { ...unit };
+        delete unitWithoutPrice.price;
         return unitWithoutPrice;
       }
 
@@ -206,8 +208,8 @@ function updateSellingUnitPrice(name: string, value: string) {
   }
 
   return (
-    <main className="min-h-screen bg-slate-100 px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mx-auto w-full max-w-2xl">
+    <main className="min-h-screen bg-slate-50 px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+      <div className="mx-auto w-full max-w-3xl">
         <button
           type="button"
           onClick={onCancel}
@@ -216,15 +218,22 @@ function updateSellingUnitPrice(name: string, value: string) {
           ← Back to Products
         </button>
 
-        <section className="rounded-2xl bg-white p-5 shadow-sm sm:p-7">
-          <h1 className="text-2xl font-bold text-slate-900">
+        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-100 bg-white px-5 py-5 sm:px-7 sm:py-6">
+          <p className="text-xs font-bold uppercase tracking-wider text-blue-700">
+            Product catalogue
+          </p>
+
+          <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-950">
             {product ? "Edit Product" : "Add Product"}
           </h1>
 
-          <p className="mt-1 text-sm text-slate-500">
-            Save the product details and default unit price for reuse in invoices.
+          <p className="mt-2 text-sm leading-6 text-slate-500">
+            Configure product information, measurement units and pricing for reuse in invoices.
           </p>
 
+          </div>
+          <div className="p-5 sm:p-7">
           <form onSubmit={handleSubmit} className="mt-6 space-y-5">
             <div>
               <label
@@ -292,17 +301,27 @@ function updateSellingUnitPrice(name: string, value: string) {
               </select>
 
               {useCustomBaseUnit && (
-                <input
-                  required
-                  maxLength={30}
-                  value={customBaseUnit}
-                  onChange={(event) => {
-                    setCustomBaseUnit(event.target.value);
-                    setUnitError(null);
-                  }}
-                  className="mt-2 min-h-11 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                  placeholder="Enter custom base unit, e.g. BUNDLE"
-                />
+                <>
+                  <label
+                    htmlFor="product-custom-base-unit"
+                    className="form-label mt-2"
+                  >
+                    Custom base unit
+                  </label>
+
+                  <input
+                    id="product-custom-base-unit"
+                    required
+                    maxLength={30}
+                    value={customBaseUnit}
+                    onChange={(event) => {
+                      setCustomBaseUnit(event.target.value);
+                      setUnitError(null);
+                    }}
+                    className="mt-2 min-h-11 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    placeholder="Enter custom base unit, e.g. BUNDLE"
+                  />
+                </>
               )}
 
               <p className="mt-1 text-xs text-slate-500">
@@ -312,12 +331,12 @@ function updateSellingUnitPrice(name: string, value: string) {
             </div>
 
 
-            <div className="rounded-xl border border-slate-200 p-4">
-              <h2 className="text-sm font-semibold text-slate-900">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4 sm:p-5">
+              <h2 className="text-base font-bold tracking-tight text-slate-950">
                 Selling units
               </h2>
-              <p className="mt-1 text-sm text-slate-500">
-                Optional. Define other units customers can buy this product in.
+              <p className="mt-1 text-sm leading-5 text-slate-500">
+                Define additional units customers can purchase. Each unit can have its own conversion factor and optional independent selling price.
               </p>
 
               {sellingUnits.length > 0 && (
@@ -325,7 +344,7 @@ function updateSellingUnitPrice(name: string, value: string) {
                   {sellingUnits.map((unit) => (
                     <div
                       key={unit.name}
-                      className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2"
+                      className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 sm:flex-row sm:items-start sm:justify-between sm:p-4"
                     >
                       <div className="min-w-0 flex-1">
                         <div className="text-sm text-slate-700">
@@ -418,18 +437,28 @@ function updateSellingUnitPrice(name: string, value: string) {
               </select>
 
               {useCustomSellingUnit && (
-                <input
-                  autoFocus
-                  required
-                  maxLength={30}
-                  value={newUnitName}
-                  onChange={(event) => {
-                    setNewUnitName(event.target.value);
-                    setUnitError(null);
-                  }}
-                  className="mt-2 min-h-11 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                  placeholder="Enter custom selling unit"
-                />
+                <>
+                  <label
+                    htmlFor="product-custom-selling-unit"
+                    className="form-label mt-2"
+                  >
+                    Custom selling unit
+                  </label>
+
+                  <input
+                    id="product-custom-selling-unit"
+                    autoFocus
+                    required
+                    maxLength={30}
+                    value={newUnitName}
+                    onChange={(event) => {
+                      setNewUnitName(event.target.value);
+                      setUnitError(null);
+                    }}
+                    className="mt-2 min-h-11 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    placeholder="Enter custom selling unit"
+                  />
+                </>
               )}
                 </div>
 
@@ -493,53 +522,65 @@ function updateSellingUnitPrice(name: string, value: string) {
               )}
             </div>
 
-            <div>
-              <label
-                htmlFor="product-purchase-price"
-                className="mb-1 block text-sm font-medium text-slate-700"
-              >
-                Purchase price per base unit (optional)
-              </label>
-              <input
-                id="product-purchase-price"
-                type="number"
-                min="0"
-                max="9999999999.99"
-                step="0.01"
-                value={purchasePrice}
-                onChange={(event) =>
-                  setPurchasePrice(event.target.value)
-                }
-                className="min-h-11 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                placeholder="Leave empty if unknown"
-              />
-              <p className="mt-1 text-xs text-slate-500">
-                Your current acquisition cost per base unit. Used for historical
-                invoice cost and gross-profit calculations.
-              </p>
-            </div>
+            <div className="grid grid-cols-1 gap-4 rounded-2xl border border-slate-200 bg-slate-50/50 p-4 sm:grid-cols-2 sm:p-5">
+              <div className="sm:col-span-2">
+                <h2 className="text-base font-bold tracking-tight text-slate-950">
+                  Product pricing
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Set the acquisition cost and default customer selling price.
+                </p>
+              </div>
 
-            <div>
-              <label
-                htmlFor="product-price"
-                className="mb-1 block text-sm font-medium text-slate-700"
-              >
-                Default unit price
-              </label>
-              <input
-                id="product-price"
-                type="number"
-                required
-                min="0"
-                max="9999999999.99"
-                step="0.01"
-                value={defaultUnitPrice}
-                onChange={(event) =>
-                  setDefaultUnitPrice(event.target.value)
-                }
-                className="min-h-11 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                placeholder="0.00"
-              />
+              {/* Purchase price */}
+              <div>
+                <label
+                  htmlFor="product-purchase-price"
+                  className="mb-1 block text-sm font-medium text-slate-700"
+                >
+                  Purchase price per base unit (optional)
+                </label>
+
+                <input
+                  id="product-purchase-price"
+                  type="number"
+                  min="0"
+                  max="9999999999.99"
+                  step="0.01"
+                  value={purchasePrice}
+                  onChange={(event) => setPurchasePrice(event.target.value)}
+                  className="min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  placeholder="Leave empty if unknown"
+                />
+
+                <p className="mt-1 text-xs text-slate-500">
+                  Your current acquisition cost per base unit. Used for historical
+                  invoice cost and gross-profit calculations.
+                </p>
+              </div>
+
+              {/* Default selling price */}
+              <div>
+                <label
+                  htmlFor="product-price"
+                  className="mb-1 block text-sm font-medium text-slate-700"
+                >
+                  Default unit price
+                </label>
+
+                <input
+                  id="product-price"
+                  type="number"
+                  required
+                  min="0"
+                  max="9999999999.99"
+                  step="0.01"
+                  value={defaultUnitPrice}
+                  onChange={(event) => setDefaultUnitPrice(event.target.value)}
+                  className="min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  placeholder="0.00"
+                />
+              </div>
             </div>
 
             {error && (
@@ -571,6 +612,7 @@ function updateSellingUnitPrice(name: string, value: string) {
               </button>
             </div>
           </form>
+          </div>
         </section>
       </div>
     </main>

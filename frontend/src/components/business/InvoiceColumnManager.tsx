@@ -308,11 +308,15 @@ function InvoiceColumnManager({
               <div className="min-w-0 flex-1 space-y-3">
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
-                    <label className="mb-1 block text-xs font-medium text-slate-600">
+                    <label
+                      htmlFor={`invoice-column-name-${column.key}`}
+                      className="mb-1 block text-xs font-medium text-slate-600"
+                    >
                       Column Name
                     </label>
 
                     <input
+                      id={`invoice-column-name-${column.key}`}
                       type="text"
                       value={column.label}
                       disabled={column.source === "core"}
@@ -326,11 +330,15 @@ function InvoiceColumnManager({
                   </div>
 
                   <div>
-                    <label className="mb-1 block text-xs font-medium text-slate-600">
+                    <label
+                      htmlFor={`invoice-column-source-${column.key}`}
+                      className="mb-1 block text-xs font-medium text-slate-600"
+                    >
                       Data Source
                     </label>
 
                     <select
+                      id={`invoice-column-source-${column.key}`}
                       value={
                         column.source === "core"
                           ? column.key

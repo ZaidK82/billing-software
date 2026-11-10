@@ -1,4 +1,6 @@
+
 import { useState } from "react";
+import { useLocation } from "react-router-dom";
 
 type AppNavbarProps = {
   onDashboard: () => void;
@@ -22,6 +24,59 @@ function AppNavbar({
   onLogout,
 }: AppNavbarProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const location = useLocation();
+  const currentPath = location.pathname;
+
+  function isActive(path: string): boolean {
+    if (path === "/dashboard") {
+      return currentPath === "/dashboard" || currentPath === "/";
+    }
+
+    if (path === "/bills/new") {
+      return currentPath === "/bills/new";
+    }
+
+    if (path === "/bills") {
+      return (
+        currentPath === "/bills" ||
+        (
+          currentPath !== "/bills/new" &&
+          /^\/bills\/[^/]+(?:\/edit)?$/.test(currentPath)
+        )
+      );
+    }
+
+    if (path === "/reports") {
+      return currentPath.startsWith("/reports");
+    }
+
+    if (path === "/products" || path === "/customers") {
+      return (
+        currentPath === path ||
+        currentPath.startsWith(`${path}/`)
+      );
+    }
+
+    return currentPath === path;
+  }
+
+  function desktopButtonClass(path: string): string {
+    return [
+      "rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+      isActive(path)
+        ? "bg-blue-50 text-blue-700"
+        : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+    ].join(" ");
+  }
+
+  function mobileButtonClass(path: string): string {
+    return [
+      "flex min-h-11 w-full items-center rounded-xl px-4 py-3 text-left text-sm font-medium transition-colors",
+      isActive(path)
+        ? "bg-blue-50 text-blue-700"
+        : "text-slate-700 hover:bg-slate-100 active:bg-slate-200",
+    ].join(" ");
+  }
 
   function closeMenu() {
     setIsOpen(false);
@@ -32,12 +87,10 @@ function AppNavbar({
     closeMenu();
   }
 
-  const desktopButtonClass =
-    "rounded-lg px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 active:bg-slate-200";
-
   return (
     <header className="sticky top-0 z-50 border-b border-slate-200 bg-white shadow-sm">
       <div className="mx-auto flex min-h-14 w-full max-w-6xl items-center justify-between px-4 sm:px-6 lg:px-8">
+
         {/* Brand */}
         <button
           type="button"
@@ -48,11 +101,12 @@ function AppNavbar({
         </button>
 
         {/* Desktop navigation */}
-        <nav className="hidden items-center gap-1 lg:flex">
+        <nav className="hidden items-center gap-1 lg:flex" aria-label="Main navigation">
           <button
             type="button"
             onClick={() => handleNavigation(onDashboard)}
-            className={desktopButtonClass}
+            aria-current={isActive("/dashboard") ? "page" : undefined}
+            className={desktopButtonClass("/dashboard")}
           >
             Dashboard
           </button>
@@ -60,7 +114,8 @@ function AppNavbar({
           <button
             type="button"
             onClick={() => handleNavigation(onCreateBill)}
-            className={desktopButtonClass}
+            aria-current={isActive("/bills/new") ? "page" : undefined}
+            className={desktopButtonClass("/bills/new")}
           >
             Create Bill
           </button>
@@ -68,7 +123,8 @@ function AppNavbar({
           <button
             type="button"
             onClick={() => handleNavigation(onBills)}
-            className={desktopButtonClass}
+            aria-current={isActive("/bills") ? "page" : undefined}
+            className={desktopButtonClass("/bills")}
           >
             Bills
           </button>
@@ -76,7 +132,8 @@ function AppNavbar({
           <button
             type="button"
             onClick={() => handleNavigation(onCustomers)}
-            className={desktopButtonClass}
+            aria-current={isActive("/customers") ? "page" : undefined}
+            className={desktopButtonClass("/customers")}
           >
             Customers
           </button>
@@ -84,7 +141,8 @@ function AppNavbar({
           <button
             type="button"
             onClick={() => handleNavigation(onReports)}
-            className={desktopButtonClass}
+            aria-current={isActive("/reports") ? "page" : undefined}
+            className={desktopButtonClass("/reports")}
           >
             Reports
           </button>
@@ -92,17 +150,17 @@ function AppNavbar({
           <button
             type="button"
             onClick={() => handleNavigation(onProducts)}
-            className={desktopButtonClass}
+            aria-current={isActive("/products") ? "page" : undefined}
+            className={desktopButtonClass("/products")}
           >
             Products
           </button>
 
           <button
             type="button"
-            onClick={() =>
-              handleNavigation(onBusinessProfile)
-            }
-            className={desktopButtonClass}
+            onClick={() => handleNavigation(onBusinessProfile)}
+            aria-current={isActive("/business") ? "page" : undefined}
+            className={desktopButtonClass("/business")}
           >
             Business Profile
           </button>
@@ -120,12 +178,9 @@ function AppNavbar({
         <button
           type="button"
           onClick={() => setIsOpen((current) => !current)}
-          aria-label={
-            isOpen
-              ? "Close navigation menu"
-              : "Open navigation menu"
-          }
+          aria-label={isOpen ? "Close navigation menu" : "Open navigation menu"}
           aria-expanded={isOpen}
+          aria-controls="mobile-navigation"
           className="flex min-h-11 min-w-11 items-center justify-center rounded-xl text-xl text-slate-700 transition hover:bg-slate-100 active:bg-slate-200 lg:hidden"
         >
           {isOpen ? "✕" : "☰"}
@@ -134,13 +189,20 @@ function AppNavbar({
 
       {/* Mobile/tablet navigation */}
       {isOpen && (
-        <div className="border-t border-slate-100 bg-white lg:hidden">
-          <nav className="mx-auto w-full max-w-6xl px-4 py-3 sm:px-6">
+        <div
+          id="mobile-navigation"
+          className="border-t border-slate-100 bg-white lg:hidden"
+        >
+          <nav
+            className="mx-auto w-full max-w-6xl px-4 py-3 sm:px-6"
+            aria-label="Mobile navigation"
+          >
             <div className="space-y-1">
               <button
                 type="button"
                 onClick={() => handleNavigation(onDashboard)}
-                className="flex min-h-11 w-full items-center rounded-xl px-4 py-3 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-100 active:bg-slate-200"
+                aria-current={isActive("/dashboard") ? "page" : undefined}
+                className={mobileButtonClass("/dashboard")}
               >
                 Dashboard
               </button>
@@ -148,7 +210,8 @@ function AppNavbar({
               <button
                 type="button"
                 onClick={() => handleNavigation(onCreateBill)}
-                className="flex min-h-11 w-full items-center rounded-xl px-4 py-3 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-100 active:bg-slate-200"
+                aria-current={isActive("/bills/new") ? "page" : undefined}
+                className={mobileButtonClass("/bills/new")}
               >
                 Create Bill
               </button>
@@ -156,7 +219,8 @@ function AppNavbar({
               <button
                 type="button"
                 onClick={() => handleNavigation(onBills)}
-                className="flex min-h-11 w-full items-center rounded-xl px-4 py-3 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-100 active:bg-slate-200"
+                aria-current={isActive("/bills") ? "page" : undefined}
+                className={mobileButtonClass("/bills")}
               >
                 Bills
               </button>
@@ -164,7 +228,8 @@ function AppNavbar({
               <button
                 type="button"
                 onClick={() => handleNavigation(onCustomers)}
-                className="flex min-h-11 w-full items-center rounded-xl px-4 py-3 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-100 active:bg-slate-200"
+                aria-current={isActive("/customers") ? "page" : undefined}
+                className={mobileButtonClass("/customers")}
               >
                 Customers
               </button>
@@ -172,7 +237,8 @@ function AppNavbar({
               <button
                 type="button"
                 onClick={() => handleNavigation(onReports)}
-                className="flex min-h-11 w-full items-center rounded-xl px-4 py-3 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-100 active:bg-slate-200"
+                aria-current={isActive("/reports") ? "page" : undefined}
+                className={mobileButtonClass("/reports")}
               >
                 Reports
               </button>
@@ -180,17 +246,17 @@ function AppNavbar({
               <button
                 type="button"
                 onClick={() => handleNavigation(onProducts)}
-                className="flex min-h-11 w-full items-center rounded-xl px-4 py-3 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-100 active:bg-slate-200"
+                aria-current={isActive("/products") ? "page" : undefined}
+                className={mobileButtonClass("/products")}
               >
                 Products
               </button>
 
               <button
                 type="button"
-                onClick={() =>
-                  handleNavigation(onBusinessProfile)
-                }
-                className="flex min-h-11 w-full items-center rounded-xl px-4 py-3 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-100 active:bg-slate-200"
+                onClick={() => handleNavigation(onBusinessProfile)}
+                aria-current={isActive("/business") ? "page" : undefined}
+                className={mobileButtonClass("/business")}
               >
                 Business Profile
               </button>
